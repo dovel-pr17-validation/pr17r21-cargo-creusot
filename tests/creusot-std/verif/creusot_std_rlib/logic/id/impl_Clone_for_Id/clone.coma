@@ -1,0 +1,13 @@
+(* <logic::id::Id as std::clone::Clone> *)
+
+use creusot.prelude.Any
+
+type t_Id
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let clone_Id (self: t_Id) (return (x: t_Id)) = (! bb0
+  [ bb0 = s0 [ s0 = [ &_ret <- self ] s1 | s1 = return {_ret} ] ] [ & _ret: t_Id = Any.any_l () | & self: t_Id = self ])
+  [ return (result: t_Id) -> {[@stop_split] [@expl:clone ensures] result = self} (! return {result}) ]

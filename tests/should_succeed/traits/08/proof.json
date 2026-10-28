@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_test": { "vc_test_T": { "prover": "cvc5", "time": 0.013 } },
+    "M_trait_Tr__program": {
+      "vc_program_Self": { "prover": "cvc5", "time": 0.014 }
+    }
+  }
+}

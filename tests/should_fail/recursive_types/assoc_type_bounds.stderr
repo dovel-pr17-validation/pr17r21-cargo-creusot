@@ -1,0 +1,14 @@
+error: Illegal recursive trait
+ --> assoc_type_bounds.rs:4:1
+  |
+4 | pub trait Tr {
+  | ^^^^^^^^^^^^
+  |
+note: `Tr` is a bound of `Tr::A`
+ --> assoc_type_bounds.rs:5:13
+  |
+5 |     type A: Tr;
+  |             ^^
+
+error: aborting due to 1 previous error
+

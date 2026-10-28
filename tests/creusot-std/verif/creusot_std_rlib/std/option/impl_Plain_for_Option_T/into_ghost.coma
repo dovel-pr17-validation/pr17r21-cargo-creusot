@@ -1,0 +1,124 @@
+(* <std::option::Option<T> as ghost::Plain> *)
+
+use creusot.prelude.Any
+
+type t_T
+
+type t_Option_T = None | Some t_T
+
+predicate inv_bool [@inline:trivial] (_1: bool) = true
+
+meta "rewrite_def" predicate inv_bool
+
+let into_ghost_bool (self: bool) (return (x: bool)) = {[@stop_split] [@expl:into_ghost requires] inv_bool self}
+  any [ return (result: bool) -> {[@stop_split] [@expl:into_ghost ensures] result = self} (! return {result}) ]
+
+let deref_Ghost_bool (self: bool) (return (x: bool)) = any
+  [ return (result: bool) -> {[@stop_split] [@expl:deref ensures] result = self} (! return {result}) ]
+
+constant any_T : t_T
+
+function unwrap_Option_T (self: t_Option_T) : t_T = match self with
+    | Some x -> x
+    | None -> any_T
+    end
+
+predicate inv_T (_1: t_T)
+
+predicate invariant_Ghost_T [@inline:trivial] (self: t_T) = inv_T self
+
+meta "rewrite_def" predicate invariant_Ghost_T
+
+predicate inv_Ghost_T [@inline:trivial] (_1: t_T) = invariant_Ghost_T _1
+
+meta "rewrite_def" predicate inv_Ghost_T
+
+let into_ghost_T (self: t_T) (return (x: t_T)) = {[@stop_split] [@expl:into_ghost requires] inv_T self}
+  any
+  [ return (result: t_T) ->
+  {[@stop_split] [@expl:into_ghost_T ensures] ([@stop_split] [@expl:into_ghost result type invariant] inv_Ghost_T result)
+    /\ ([@stop_split] [@expl:into_ghost ensures] result = self)}
+    (! return {result}) ]
+
+predicate invariant_ref_Ghost_T [@inline:trivial] (self: t_T) = inv_Ghost_T self
+
+meta "rewrite_def" predicate invariant_ref_Ghost_T
+
+predicate inv_ref_Ghost_T [@inline:trivial] (_1: t_T) = invariant_ref_Ghost_T _1
+
+meta "rewrite_def" predicate inv_ref_Ghost_T
+
+predicate invariant_ref_T [@inline:trivial] (self: t_T) = inv_T self
+
+meta "rewrite_def" predicate invariant_ref_T
+
+predicate inv_ref_T [@inline:trivial] (_1: t_T) = invariant_ref_T _1
+
+meta "rewrite_def" predicate inv_ref_T
+
+let deref_Ghost_T (self: t_T) (return (x: t_T)) =
+{[@stop_split] [@expl:deref 'self' type invariant] inv_ref_Ghost_T self}
+  any
+  [ return (result: t_T) ->
+  {[@stop_split] [@expl:deref_Ghost_T ensures] ([@stop_split] [@expl:deref result type invariant] inv_ref_T result)
+    /\ ([@stop_split] [@expl:deref ensures] result = self)}
+    (! return {result}) ]
+
+predicate inv_Option_T (_1: t_Option_T)
+
+axiom inv_axiom [@rewrite]: forall _1: t_Option_T [inv_Option_T _1]. inv_Option_T _1
+    = match _1 with
+      | None -> true
+      | Some f0 -> inv_T f0
+      end
+
+predicate invariant_Ghost_Option_T [@inline:trivial] (self: t_Option_T) = inv_Option_T self
+
+meta "rewrite_def" predicate invariant_Ghost_Option_T
+
+predicate inv_Ghost_Option_T [@inline:trivial] (_1: t_Option_T) = invariant_Ghost_Option_T _1
+
+meta "rewrite_def" predicate inv_Ghost_Option_T
+
+let new_Option_T (x: t_Option_T) (return (x'0: t_Option_T)) =
+{[@stop_split] [@expl:new 'x' type invariant] inv_Option_T x}
+  any
+  [ return (result: t_Option_T) ->
+  {[@stop_split] [@expl:new_Option_T ensures] ([@stop_split] [@expl:new result type invariant] inv_Ghost_Option_T result)
+    /\ ([@stop_split] [@expl:new ensures] result = x)}
+    (! return {result}) ]
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let into_ghost_Option_T (snap: t_Option_T) (return (x: t_Option_T)) =
+{[@stop_split] [@expl:into_ghost requires] inv_Option_T snap}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = [ &c <- snap = None ] s1
+    | s1 = into_ghost_bool {c} (fun (_x: bool) -> [ &_13 <- _x ] s2)
+    | s2 = deref_Ghost_bool {_13} (fun (_x: bool) -> [ &_11 <- _x ] s3)
+    | s3 = any [ br0 -> {_11 = false} (! bb5) | br1 -> {_11} (! bb4) ] ]
+  | bb4 = s0 [ s0 = [ &_6 <- None ] s1 | s1 = bb9 ]
+  | bb5 = s0
+    [ s0 = any [ any_ (_dest: t_T) -> (! -{_dest = unwrap_Option_T snap}- [ &t <- _dest ] s1) ]
+      [ _ck -> (! {[@stop_split] [@expl:unwrap_logic requires] snap <> None} any) ]
+    | s1 = into_ghost_T {t} (fun (_x: t_T) -> [ &_21 <- _x ] s2)
+    | s2 = deref_Ghost_T {_21} (fun (_x: t_T) -> [ &_19 <- _x ] s3)
+    | s3 = [ &_6 <- Some _19 ] s4
+    | s4 = bb9 ]
+  | bb9 = s0 [ s0 = new_Option_T {_6} (fun (_x: t_Option_T) -> [ &_ret <- _x ] s1) | s1 = return {_ret} ] ]
+  [ & _ret: t_Option_T = Any.any_l ()
+  | & snap: t_Option_T = snap
+  | & _6: t_Option_T = Any.any_l ()
+  | & c: bool = Any.any_l ()
+  | & _11: bool = Any.any_l ()
+  | & _13: bool = Any.any_l ()
+  | & t: t_T = Any.any_l ()
+  | & _19: t_T = Any.any_l ()
+  | & _21: t_T = Any.any_l () ])
+  [ return (result: t_Option_T) ->
+  {[@stop_split] [@expl:into_ghost_Option_T ensures] ([@stop_split] [@expl:into_ghost result type invariant] inv_Ghost_Option_T result)
+    /\ ([@stop_split] [@expl:into_ghost ensures] result = snap)}
+    (! return {result}) ]

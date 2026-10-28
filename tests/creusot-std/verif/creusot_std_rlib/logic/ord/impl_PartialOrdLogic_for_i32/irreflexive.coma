@@ -1,0 +1,13 @@
+(* <i32 as logic::ord::PartialOrdLogic> *)
+
+use creusot.int.Int32
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+constant self : Int32.t
+
+function irreflexive_i32 (self: Int32.t) : ()
+
+goal vc_irreflexive_i32: [@stop_split] [@expl:irreflexive ensures] not Int32.lt self self

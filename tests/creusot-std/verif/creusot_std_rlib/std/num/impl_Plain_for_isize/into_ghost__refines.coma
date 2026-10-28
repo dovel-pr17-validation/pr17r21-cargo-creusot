@@ -1,0 +1,13 @@
+(* <isize as ghost::Plain> *)
+
+use creusot.int.Int64
+
+predicate inv_isize [@inline:trivial] (_1: Int64.t) = true
+
+meta "rewrite_def" predicate inv_isize
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+goal refines: forall snap: Int64.t. inv_isize snap -> (forall result: Int64.t. result = snap -> result = snap)

@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_call_omg": {
+      "vc_call_omg": { "prover": "cvc5", "time": 0.01 },
+      "vc_omg": { "prover": "cvc5", "time": 0.015 }
+    },
+    "M_omg": { "vc_omg": { "prover": "cvc5", "time": 0.01 } }
+  }
+}

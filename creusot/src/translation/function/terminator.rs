@@ -1,0 +1,272 @@
+use super::BodyTranslator;
+use crate::{
+    backend::projections::projections_term,
+    contracts_items::Intrinsic,
+    ctx::{HasTyCtxt as _, TranslationCtx},
+    lints::{CONTRACTLESS_EXTERNAL_FUNCTION, Diagnostics},
+    resolution::TraitResolved,
+    translation::{
+        fmir::{self, *},
+        pearlite::{Term, TermKind, UnOp},
+    },
+};
+use rustc_middle::{
+    mir::{
+        self, AssertKind, Location, Operand, Rvalue, SourceInfo, StatementKind, SwitchTargets,
+        TerminatorKind::*,
+    },
+    ty::{GenericArgKind, Ty, TyKind},
+};
+use rustc_span::sym;
+use std::collections::{HashMap, HashSet};
+
+// Translate the terminator of a basic block.
+// There isn't much that's special about this. The only subtlety is in how
+// we translate switchInt. We rewrite it into a primitive constructor match
+// rather than switching on discriminant since WhyML doesn't have integer
+// patterns in match expressions.
+
+impl<'tcx> BodyTranslator<'_, 'tcx> {
+    pub fn translate_terminator(&mut self, terminator: &mir::Terminator<'tcx>, loc: Location) {
+        let span = terminator.source_info.span;
+        self.resolve_at(loc, span);
+        self.activate_two_phases(loc, span);
+        let mut term = match &terminator.kind {
+            Goto { target } => Terminator::Goto(*target),
+            SwitchInt { discr, targets, .. } => {
+                let bbd = &self.body.basic_blocks[loc.block];
+                let real_discr = if let Some(mir::Statement {
+                    kind: StatementKind::Assign(box (pl, Rvalue::Discriminant(real_discr))),
+                    ..
+                }) = bbd.statements.last()
+                    && discr.place() == Some(*pl)
+                {
+                    Operand::Move(*real_discr)
+                } else {
+                    discr.clone()
+                };
+                let discriminant = self.translate_operand(&real_discr, span);
+                let ty = real_discr.ty(self.body, self.tcx());
+                make_switch(self.ctx, terminator.source_info, ty, targets, discriminant)
+            }
+            Return => Terminator::Return,
+            Unreachable => Terminator::Abort(terminator.source_info.span),
+            &Call { ref func, ref args, destination, mut target, fn_span, .. } => {
+                let &TyKind::FnDef(fun_def_id, subst) = func.ty(self.body, self.tcx()).kind()
+                else {
+                    self.fatal_error(fn_span, "unsupported function call type").emit()
+                };
+                let subst = subst.skip_binder();
+                if Intrinsic::SnapshotFromFn.is(self.ctx, fun_def_id) {
+                    let GenericArgKind::Type(ty) = subst.get(1).unwrap().kind() else {
+                        unreachable!()
+                    };
+                    let TyKind::Closure(def_id, _) = ty.kind() else { unreachable!() };
+                    let snapshot = self.snapshots.remove(def_id).unwrap();
+                    self.emit_snapshot_assign(destination, snapshot, span);
+                } else {
+                    let func_args: Box<[_]> = args
+                        .iter()
+                        .map(|arg| self.translate_operand(&arg.node, arg.span))
+                        .collect();
+
+                    if self.tcx().is_diagnostic_item(sym::box_new, fun_def_id) {
+                        let [arg] = *func_args.into_array().unwrap();
+                        self.emit_assignment(destination, RValue::Operand(arg), span);
+                    } else {
+                        if let Err(err) = self.ctx.check_additional_predicates(
+                            fun_def_id,
+                            subst,
+                            self.typing_env().param_env,
+                            span,
+                        ) {
+                            err.raise_fatal();
+                        }
+
+                        let tr_res = TraitResolved::resolve_item(
+                            self.ctx.tcx,
+                            self.typing_env(),
+                            fun_def_id,
+                            subst,
+                        );
+                        let (fun_def_id, subst) =
+                            tr_res.to_opt(fun_def_id, subst).expect("could not find instance");
+                        let contract = &self.ctx.sig(fun_def_id).contract;
+                        if contract.extern_no_spec()
+                            && !matches!(tr_res, TraitResolved::UnknownFound)
+                            && let Some(lint_root) =
+                                self.body.source_info(loc).scope.lint_root(&self.body.source_scopes)
+                        {
+                            let name = self.ctx.tcx.item_name(fun_def_id);
+                            self.ctx.emit_node_span_lint(
+                                CONTRACTLESS_EXTERNAL_FUNCTION,
+                                lint_root,
+                                span,
+                                Diagnostics::ContractlessExternalFunction { name, span },
+                            );
+                        }
+                        if contract.is_requires_false()
+                            && !matches!(
+                                self.ctx.intrinsic(fun_def_id),
+                                Intrinsic::GhostDerefMut | Intrinsic::GhostDeref,
+                            )
+                            && !matches!(tr_res, TraitResolved::UnknownFound)
+                        {
+                            target = None
+                        } else {
+                            let subst = self.ctx.erase_and_anonymize_regions(subst);
+                            self.emit_statement(Statement {
+                                kind: fmir::StatementKind::Call(
+                                    self.translate_place(destination, span),
+                                    fun_def_id,
+                                    subst,
+                                    func_args,
+                                    span,
+                                ),
+                                span: span.source_callsite(),
+                            });
+                        }
+                    }
+                }
+
+                if let Some(bb) = target {
+                    self.resolve_at(loc.successor_within_block(), span);
+                    Terminator::Goto(bb)
+                } else {
+                    Terminator::Abort(terminator.source_info.span)
+                }
+            }
+            Assert { cond, expected, msg, target, unwind: _ } => {
+                let &(Operand::Copy(pl) | Operand::Move(pl)) = cond else {
+                    self.ctx.dcx().span_bug(span, "unexpected operand in assert")
+                };
+                let pl = self.translate_place(pl, span);
+                let mut cond = projections_term(
+                    self.ctx,
+                    self.typing_env(),
+                    Term::var(pl.local, self.vars[&pl.local].ty),
+                    &pl.projection,
+                    |e| e,
+                    None,
+                    |id| Term::var(*id, self.tcx().types.usize),
+                    span,
+                );
+                cond = cond.span(span);
+                if !expected {
+                    cond = Term {
+                        ty: cond.ty,
+                        span: cond.span,
+                        kind: TermKind::Unary { op: UnOp::Not, arg: Box::new(cond) },
+                    };
+                }
+                let msg = Some(self.get_explanation(msg));
+                self.emit_statement(Statement {
+                    kind: fmir::StatementKind::Assertion { cond, msg, check: true, assume: true },
+                    span,
+                });
+                Terminator::Goto(*target)
+            }
+            Drop { target, .. } => Terminator::Goto(*target),
+
+            FalseUnwind { real_target, .. } => Terminator::Goto(*real_target),
+            FalseEdge { .. }
+            | CoroutineDrop
+            | UnwindResume
+            | UnwindTerminate { .. }
+            | Yield { .. }
+            | InlineAsm { .. }
+            | TailCall { .. } => unreachable!("{:?}", terminator.kind),
+        };
+        // Insert blocks of resolve statements and retarget the terminator to those blocks.
+        if let Some(borrow_data) = &mut self.borrow_data
+            && let Some(mut resolved) = borrow_data.remove_resolved_between_blocks(loc.block)
+        {
+            let mut retarget = HashMap::new();
+            for target in term.targets_mut() {
+                match resolved.remove(target) {
+                    Some(resolves) => {
+                        let fresh = self.fresh_block_id();
+                        retarget.insert(*target, fresh);
+                        let mut stmts = Vec::new();
+                        for place in resolves {
+                            self.emit_resolve_into(place, span, &mut stmts)
+                        }
+                        let block = fmir::Block {
+                            invariants: vec![],
+                            variant: None,
+                            stmts,
+                            terminator: fmir::Terminator::Goto(*target),
+                        };
+                        self.retarget_blocks.push((fresh, block));
+                        *target = fresh;
+                    }
+                    // Either the retarget block has already been created (rewrite `*target`), or there wasn't one in the first place (do nothing)
+                    None => {
+                        if let Some(goto) = retarget.get(target) {
+                            *target = *goto;
+                        }
+                    }
+                }
+            }
+        }
+        self.emit_terminator(term)
+    }
+
+    fn get_explanation(&mut self, msg: &mir::AssertKind<Operand<'tcx>>) -> String {
+        match msg {
+            AssertKind::BoundsCheck { len: _, index: _ } => "expl:index in bounds".to_string(),
+            AssertKind::Overflow(op, _a, _b) => format!("expl:{op:?} overflow"),
+            AssertKind::OverflowNeg(_op) => "expl:negation overflow".to_string(),
+            AssertKind::DivisionByZero(_) => "expl:division by zero".to_string(),
+            AssertKind::RemainderByZero(_) => "expl:remainder by zero".to_string(),
+            _ => unreachable!("Resume assertions"),
+        }
+    }
+}
+
+fn make_switch<'tcx>(
+    ctx: &TranslationCtx<'tcx>,
+    si: SourceInfo,
+    switch_ty: Ty<'tcx>,
+    targets: &SwitchTargets,
+    discr: fmir::Operand<'tcx>,
+) -> Terminator<'tcx> {
+    let branches = match switch_ty.kind() {
+        TyKind::Adt(def, substs) => {
+            let d_to_var: HashMap<_, _> =
+                def.discriminants(ctx.tcx).map(|(idx, d)| (d.val, idx)).collect();
+
+            let branches = targets.iter().map(|(disc, tgt)| (d_to_var[&disc], (tgt))).collect();
+
+            let default = if targets.iter().map(|(disc, _)| disc).collect::<HashSet<_>>().len()
+                == def.variants().len()
+            {
+                None
+            } else {
+                Some(targets.otherwise())
+            };
+
+            Branches::Constructor(*def, substs, branches, default)
+        }
+        TyKind::Bool => {
+            let f_branch = targets
+                .iter()
+                .find_map(|(d, tgt)| (d == 0).then_some(tgt))
+                .unwrap_or(targets.otherwise());
+
+            let t_branch = targets
+                .iter()
+                .find_map(|(d, tgt)| (d == 1).then_some(tgt))
+                .unwrap_or(targets.otherwise());
+
+            Branches::Bool(f_branch, t_branch)
+        }
+        TyKind::Float(_) => {
+            ctx.crash_and_error(si.span, "Float patterns are currently unsupported")
+        }
+        TyKind::Uint(_) => Branches::Uint(targets.iter().collect(), targets.otherwise()),
+        TyKind::Int(_) => Branches::Int(targets.iter().collect(), targets.otherwise()),
+        ty => ctx.crash_and_error(si.span, format!("match on {:?} is currently unsupported", ty)),
+    };
+    Terminator::Switch(discr, si.span, branches)
+}

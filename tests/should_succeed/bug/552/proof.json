@@ -1,0 +1,15 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_impl_MachineTrait_for_Machine__step": {
+      "vc_step_Machine": { "prover": "cvc5", "time": 0.017 },
+      "vc_transition": { "prover": "cvc5", "time": 0.019 }
+    },
+    "M_impl_MachineTrait_for_Machine__step__refines": {
+      "refines": { "prover": "cvc5", "time": 0.016 }
+    },
+    "M_impl_Machine__transition": {
+      "vc_transition": { "prover": "cvc5", "time": 0.007 }
+    }
+  }
+}

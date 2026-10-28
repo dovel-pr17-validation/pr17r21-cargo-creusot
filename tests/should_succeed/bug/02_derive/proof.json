@@ -1,0 +1,8 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_impl_Clone_for_Lit__clone": {
+      "vc_clone_Lit": { "prover": "cvc5", "time": 0.015 }
+    }
+  }
+}

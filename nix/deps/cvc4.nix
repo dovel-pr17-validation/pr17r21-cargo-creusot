@@ -1,0 +1,147 @@
+{
+  # Dependencies
+  antlr3_4,
+  cadical,
+  cln,
+  cmake,
+  cryptominisat,
+  gmp,
+  jdk,
+  libantlr3c,
+  pkg-config,
+  python3,
+  symfpu,
+
+  # Previous overlay
+  cvc4,
+
+  # Librairies
+  fetchFromGitHub,
+  lib,
+  stdenv,
+
+  # Pins
+  sha256,
+  version,
+}:
+let
+  cvc4-cln = cln.override { gccStdenv = stdenv; };
+
+  cvc4-cryptominisat = cryptominisat.overrideAttrs {
+    src = fetchFromGitHub {
+      owner = "msoos";
+      repo = "cryptominisat";
+      rev = "5.8.0";
+      hash = "sha256-oGDsEYU9yXmHfbK4LyFzuJdfKHiFbSrT5PdY6GnrFQI=";
+    };
+
+    cmakeFlags = [
+      "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+      "-DENABLE_PYTHON_INTERFACE=0"
+    ];
+
+    patchPhase = ''
+      sed -i -e '28i#include <cstdint>' src/ccnr.h
+    '';
+  };
+
+  cvc4-symfpu = symfpu.overrideAttrs {
+    version = "0-unstable-2019-05-17";
+    src = fetchFromGitHub {
+      owner = "martin-cs";
+      repo = "symfpu";
+      rev = "8fbe139bf0071cbe0758d2f6690a546c69ff0053";
+      hash = "sha256-ONGfvJMo/HXlbxHmkFs9O5nhs6aDM+XuNSPgY+ykxck=";
+    };
+  };
+in
+stdenv.mkDerivation {
+  inherit (cvc4)
+    meta
+    patches
+    pname
+    preConfigure
+    ;
+  inherit version;
+
+  src = fetchFromGitHub {
+    owner = "cvc5";
+    repo = "cvc5";
+    rev = "cvc4-${version}";
+    hash = sha256;
+  };
+
+  nativeBuildInputs = [
+    pkg-config
+    cmake
+  ];
+
+  buildInputs = [
+    antlr3_4
+    cadical
+    cvc4-cln
+    cvc4-cryptominisat
+    cvc4-symfpu
+    gmp
+    jdk
+    libantlr3c
+    python3
+    python3.pkgs.toml
+  ];
+
+  cmakeFlags = [
+    "-DCMAKE_BUILD_TYPE=Production"
+    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+    "-DENABLE_GPL=1"
+
+    "-DENABLE_ASAN=0"
+    "-DENABLE_UBSAN=0"
+    "-DENABLE_TSAN=0"
+    "-DENABLE_ASSERTIONS=0"
+    "-DENABLE_COMP_INC_TRACK=0"
+    "-DENABLE_DEBUG_SYMBOLS=0"
+    "-DENABLE_DUMPING=0"
+    "-DENABLE_MUZZLE=0"
+    "-DENABLE_PROOFS=0"
+    "-DENABLE_STATISTICS=1"
+    "-DENABLE_TRACING=0"
+    "-DENABLE_UNIT_TESTING=0"
+    "-DENABLE_VALGRIND=0"
+    "-DENABLE_SHARED=1"
+    "-DENABLE_STATIC_BINARY=0"
+
+    "-DENABLE_BEST=0"
+    "-DENABLE_COVERAGE=0"
+    "-DENABLE_DEBUG_CONTEXT_MM=0"
+    "-DENABLE_PROFILING=0"
+
+    "-DUSE_ABC=0"
+    "-DUSE_CADICAL=1"
+    "-DUSE_CLN=1"
+    "-DUSE_CRYPTOMINISAT=1"
+    "-DUSE_GLPK=0"
+    "-DUSE_KISSAT=0"
+    "-DUSE_READLINE=0"
+
+    "-DUSE_DRAT2ER=0"
+    "-DUSE_LFSC=0"
+    "-DUSE_SYMFPU=1"
+    "-DUSE_PYTHON2=0"
+    "-DUSE_PYTHON3=1"
+
+    "-DBUILD_SWIG_BINDINGS_JAVA=0"
+    "-DBUILD_SWIG_BINDINGS_PYTHON=0"
+    "-DBUILD_BINDINGS_PYTHON=0"
+  ];
+
+  postPatch = ''
+    sed -i '/#pragma once/a\
+    #include <cstddef>' src/expr/emptyset.h
+
+    sed -i '/#define CVC4__EXPR__EXPR_IOMANIP_H/a\
+    #include <cstddef>' src/expr/expr_iomanip.h
+
+    sed -i '/#define CVC4__UTIL__REGEXP_H/a\
+    #include <cstddef>' src/util/regexp.h
+  '';
+}

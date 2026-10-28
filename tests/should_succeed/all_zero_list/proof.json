@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_all_zero": {
+      "vc_all_zero": { "prover": "cvc5", "time": 0.03 },
+      "vc_elim_Cons": { "prover": "cvc5", "time": 0.012 }
+    }
+  }
+}

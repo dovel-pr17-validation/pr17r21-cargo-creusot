@@ -1,0 +1,28 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_cancelable_FMap_K_V": {
+        "tactic": "split_vc",
+        "children": [
+          { "prover": "z3", "time": 0.044 },
+          { "prover": "z3", "time": 0.057 },
+          { "prover": "z3", "time": 0.027 },
+          { "prover": "z3", "time": 0.087 },
+          { "prover": "z3", "time": 0.074 },
+          { "prover": "z3", "time": 0.023 },
+          { "prover": "cvc5", "time": 0.129 },
+          { "prover": "cvc5", "time": 0.086 },
+          { "prover": "alt-ergo", "time": 0.48 },
+          { "prover": "cvc5", "time": 0.135 },
+          { "prover": "alt-ergo", "time": 0.03 },
+          { "prover": "alt-ergo", "time": 0.024 },
+          { "prover": "cvc5", "time": 0.143 },
+          { "prover": "z3", "time": 0.015 },
+          { "prover": "cvc5", "time": 0.021 },
+          { "prover": "alt-ergo", "time": 0.024 }
+        ]
+      }
+    }
+  }
+}

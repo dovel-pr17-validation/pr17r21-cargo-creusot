@@ -1,0 +1,8 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_negative_is_negative": {
+      "vc_negative_is_negative": { "prover": "cvc5", "time": 0.012 }
+    }
+  }
+}

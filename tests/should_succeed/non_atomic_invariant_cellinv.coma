@@ -1,0 +1,318 @@
+module M_impl_CellInv_T__read (* CellInv<T> *)
+  use set.Set
+  use creusot.prelude.Any
+  
+  type namespace_other
+  
+  type t_Namespace = Namespace_PERMCELL int | Other namespace_other
+  
+  type t_NonAtomicInvariant_PCellNAInv_T
+  
+  type t_PCell_T
+  
+  type t_CellInv_T = { data: t_PCell_T; permission: t_NonAtomicInvariant_PCellNAInv_T }
+  
+  let deref_Ghost_NonAtomicInvariant_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T)
+    (return (x: t_NonAtomicInvariant_PCellNAInv_T)) = any
+    [ return (result: t_NonAtomicInvariant_PCellNAInv_T) -> {[@stop_split] [@expl:deref ensures] result = self}
+      (! return {result}) ]
+  
+  type t_Tokens
+  
+  let into_inner_ref_Tokens (self: t_Tokens) (return (x: t_Tokens)) = any
+    [ return (result: t_Tokens) -> {[@stop_split] [@expl:into_inner ensures] result = self} (! return {result}) ]
+  
+  type t_Perm_PCell_T
+  
+  type t_PCellNAInv_T = { f0: t_Perm_PCell_T }
+  
+  predicate contains_Namespace [@inline:trivial] (self: Set.set t_Namespace) (e: t_Namespace) = Set.mem e self
+  
+  meta "rewrite_def" predicate contains_Namespace
+  
+  function namespaces (self: t_Tokens) : Set.set t_Namespace
+  
+  predicate contains (self: t_Tokens) (namespace: t_Namespace) = contains_Namespace (namespaces self) namespace
+  
+  function namespace_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T) : t_Namespace
+  
+  function ward_PCell_T (self: t_Perm_PCell_T) : t_PCell_T
+  
+  function public_PCellNAInv_T (self: t_PCellNAInv_T) : t_PCell_T = ward_PCell_T self.f0
+  
+  function public_PCellNAInv_T'0 (self: t_NonAtomicInvariant_PCellNAInv_T) : t_PCell_T
+  
+  predicate protocol_PCellNAInv_T (self: t_PCellNAInv_T) = true
+  
+  let open_const_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T) (tokens: t_Tokens)
+    (return (x: t_PCellNAInv_T)) =
+  {[@stop_split] [@expl:open_const requires] contains tokens (namespace_PCellNAInv_T self)}
+    any
+    [ return (result: t_PCellNAInv_T) -> {[@stop_split] [@expl:open_const ensures] public_PCellNAInv_T result
+        = public_PCellNAInv_T'0 self
+      /\ protocol_PCellNAInv_T result}
+      (! return {result}) ]
+  
+  let new_ref_Perm_PCell_T (x: t_Perm_PCell_T) (return (x'0: t_Perm_PCell_T)) = any
+    [ return (result: t_Perm_PCell_T) -> {[@stop_split] [@expl:new ensures] result = x} (! return {result}) ]
+  
+  type t_T
+  
+  predicate inv_T (_1: t_T)
+  
+  predicate invariant_ref_T [@inline:trivial] (self: t_T) = inv_T self
+  
+  meta "rewrite_def" predicate invariant_ref_T
+  
+  predicate inv_ref_T [@inline:trivial] (_1: t_T) = invariant_ref_T _1
+  
+  meta "rewrite_def" predicate inv_ref_T
+  
+  function val_unsized_PCell_T (self: t_Perm_PCell_T) : t_T
+  
+  let borrow_T (self: t_PCell_T) (perm: t_Perm_PCell_T) (return (x: t_T)) = {[@stop_split] [@expl:borrow requires] self
+    = ward_PCell_T perm}
+    any
+    [ return (result: t_T) ->
+    {[@stop_split] [@expl:borrow_T ensures] ([@stop_split] [@expl:borrow result type invariant] inv_ref_T result)
+      /\ ([@stop_split] [@expl:borrow ensures] result = val_unsized_PCell_T perm)}
+      (! return {result}) ]
+  
+  predicate invariant_CellInv_T (self: t_CellInv_T) =
+    namespace_PCellNAInv_T self.permission = Namespace_PERMCELL 0 /\ public_PCellNAInv_T'0 self.permission = self.data
+  
+  predicate inv_CellInv_T (_1: t_CellInv_T)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_CellInv_T [inv_CellInv_T _1]. inv_CellInv_T _1 = invariant_CellInv_T _1
+  
+  predicate invariant_ref_CellInv_T [@inline:trivial] (self: t_CellInv_T) = inv_CellInv_T self
+  
+  meta "rewrite_def" predicate invariant_ref_CellInv_T
+  
+  predicate inv_ref_CellInv_T [@inline:trivial] (_1: t_CellInv_T) = invariant_ref_CellInv_T _1
+  
+  meta "rewrite_def" predicate inv_ref_CellInv_T
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let read_T (self: t_CellInv_T) (tokens: t_Tokens) (return (x: t_T)) =
+  {[@stop_split] [@expl:read_T requires] ([@stop_split] [@expl:read 'self' type invariant] inv_ref_CellInv_T self)
+    /\ ([@stop_split] [@expl:read requires] contains tokens (Namespace_PERMCELL 0))}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = deref_Ghost_NonAtomicInvariant_PCellNAInv_T {self.permission}
+          (fun (_x: t_NonAtomicInvariant_PCellNAInv_T) -> [ &_12 <- _x ] s1)
+      | s1 = into_inner_ref_Tokens {tokens} (fun (_x: t_Tokens) -> [ &_15 <- _x ] s2)
+      | s2 = open_const_PCellNAInv_T {_12} {_15} (fun (_x: t_PCellNAInv_T) -> [ &_10 <- _x ] s3)
+      | s3 = [ &_9 <- _10.f0 ] s4
+      | s4 = new_ref_Perm_PCell_T {_9} (fun (_x: t_Perm_PCell_T) -> [ &_7 <- _x ] s5)
+      | s5 = borrow_T {self.data} {_7} (fun (_x: t_T) -> [ &_5 <- _x ] s6)
+      | s6 = [ &_ret <- _5 ] s7
+      | s7 = return {_ret} ] ]
+    [ & _ret: t_T = Any.any_l ()
+    | & self: t_CellInv_T = self
+    | & tokens: t_Tokens = tokens
+    | & _5: t_T = Any.any_l ()
+    | & _7: t_Perm_PCell_T = Any.any_l ()
+    | & _9: t_Perm_PCell_T = Any.any_l ()
+    | & _10: t_PCellNAInv_T = Any.any_l ()
+    | & _12: t_NonAtomicInvariant_PCellNAInv_T = Any.any_l ()
+    | & _15: t_Tokens = Any.any_l () ])
+    [ return (result: t_T) -> {[@stop_split] [@expl:read result type invariant] inv_ref_T result} (! return {result}) ]
+end
+module M_impl_CellInv_T__write (* CellInv<T> *)
+  use creusot.prelude.MutBorrow
+  use set.Set
+  use creusot.prelude.Any
+  
+  type namespace_other
+  
+  type t_Namespace = Namespace_PERMCELL int | Other namespace_other
+  
+  type t_NonAtomicInvariant_PCellNAInv_T
+  
+  type t_PCell_T
+  
+  type t_CellInv_T = { data: t_PCell_T; permission: t_NonAtomicInvariant_PCellNAInv_T }
+  
+  let deref_Ghost_NonAtomicInvariant_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T)
+    (return (x: t_NonAtomicInvariant_PCellNAInv_T)) = any
+    [ return (result: t_NonAtomicInvariant_PCellNAInv_T) -> {[@stop_split] [@expl:deref ensures] result = self}
+      (! return {result}) ]
+  
+  type t_Tokens
+  
+  let into_inner_Tokens (self: t_Tokens) (return (x: t_Tokens)) = any
+    [ return (result: t_Tokens) -> {[@stop_split] [@expl:into_inner ensures] result = self} (! return {result}) ]
+  
+  type t_Perm_PCell_T
+  
+  type t_PCellNAInv_T = { f0: t_Perm_PCell_T }
+  
+  type t_OpenGuard_PCellNAInv_T = { f0'0: t_PCell_T }
+  
+  type t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T = {
+    inner: MutBorrow.t t_PCellNAInv_T;
+    _guard: t_OpenGuard_PCellNAInv_T;
+    _initial: MutBorrow.t t_PCellNAInv_T }
+  
+  predicate contains_Namespace [@inline:trivial] (self: Set.set t_Namespace) (e: t_Namespace) = Set.mem e self
+  
+  meta "rewrite_def" predicate contains_Namespace
+  
+  function namespaces (self: t_Tokens) : Set.set t_Namespace
+  
+  predicate contains (self: t_Tokens) (namespace: t_Namespace) = contains_Namespace (namespaces self) namespace
+  
+  function namespace_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T) : t_Namespace
+  
+  function ward_PCell_T (self: t_Perm_PCell_T) : t_PCell_T
+  
+  function public_PCellNAInv_T (self: t_PCellNAInv_T) : t_PCell_T = ward_PCell_T self.f0
+  
+  predicate protocol_PCellNAInv_T (self: t_PCellNAInv_T) = true
+  
+  predicate guards_ref_OpenGuard_PCellNAInv_T [@inline:trivial] (self: t_OpenGuard_PCellNAInv_T) (b: t_PCellNAInv_T) =
+    public_PCellNAInv_T b = self.f0'0 /\ protocol_PCellNAInv_T b
+  
+  meta "rewrite_def" predicate guards_ref_OpenGuard_PCellNAInv_T
+  
+  predicate guards_OpenGuard_PCellNAInv_T [@inline:trivial] (self: t_OpenGuard_PCellNAInv_T) (initial: MutBorrow.t t_PCellNAInv_T) (current': MutBorrow.t t_PCellNAInv_T) =
+    guards_ref_OpenGuard_PCellNAInv_T self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_OpenGuard_PCellNAInv_T
+  
+  predicate invariant_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T [@inline:trivial] (self: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T) =
+    guards_OpenGuard_PCellNAInv_T self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T
+  
+  predicate inv_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T (_1: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T)
+  
+  axiom inv_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T [inv_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _1]. inv_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _1
+      = invariant_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _1
+  
+  function guard_refmut_PCellNAInv_T [@inline:trivial] (self: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T) : t_OpenGuard_PCellNAInv_T
+   = self._guard
+  
+  meta "rewrite_def" function guard_refmut_PCellNAInv_T
+  
+  function public_PCellNAInv_T'0 (self: t_NonAtomicInvariant_PCellNAInv_T) : t_PCell_T
+  
+  let open_PCellNAInv_T (self: t_NonAtomicInvariant_PCellNAInv_T) (tokens: t_Tokens)
+    (return (x: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T)) =
+  {[@stop_split] [@expl:open requires] contains tokens (namespace_PCellNAInv_T self)}
+    any
+    [ return (result: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T) ->
+    {[@stop_split] [@expl:open_PCellNAInv_T ensures] ([@stop_split] [@expl:open result type invariant] inv_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T result)
+      /\ ([@stop_split] [@expl:open ensures] (guard_refmut_PCellNAInv_T result).f0'0 = public_PCellNAInv_T'0 self)}
+      (! return {result}) ]
+  
+  let new_refmut_Perm_PCell_T (x: MutBorrow.t t_Perm_PCell_T) (return (x'0: MutBorrow.t t_Perm_PCell_T)) = any
+    [ return (result: MutBorrow.t t_Perm_PCell_T) -> {[@stop_split] [@expl:new ensures] result = x}
+      (! return {result}) ]
+  
+  type t_T
+  
+  predicate inv_T (_1: t_T)
+  
+  predicate invariant_refmut_T [@inline:trivial] (self: MutBorrow.t t_T) = inv_T self.current /\ inv_T self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_T
+  
+  predicate inv_refmut_T [@inline:trivial] (_1: MutBorrow.t t_T) = invariant_refmut_T _1
+  
+  meta "rewrite_def" predicate inv_refmut_T
+  
+  function fin_Ghost_refmut_Perm_PCell_T [@inline:trivial] (self: MutBorrow.t t_Perm_PCell_T) : t_Perm_PCell_T =
+    self.final
+  
+  meta "rewrite_def" function fin_Ghost_refmut_Perm_PCell_T
+  
+  function val_unsized_PCell_T (self: t_Perm_PCell_T) : t_T
+  
+  let borrow_mut_T (self: t_PCell_T) (perm: MutBorrow.t t_Perm_PCell_T) (return (x: MutBorrow.t t_T)) =
+  {[@stop_split] [@expl:borrow_mut requires] self = ward_PCell_T perm.current}
+    any
+    [ return (result: MutBorrow.t t_T) ->
+    {[@stop_split] [@expl:borrow_mut_T ensures] ([@stop_split] [@expl:borrow_mut result type invariant] inv_refmut_T result)
+      /\ ([@stop_split] [@expl:borrow_mut ensures #0] self = ward_PCell_T (fin_Ghost_refmut_Perm_PCell_T perm))
+      /\ ([@stop_split] [@expl:borrow_mut ensures #1] result.current = val_unsized_PCell_T perm.current)
+      /\ ([@stop_split] [@expl:borrow_mut ensures #2] result.final
+      = val_unsized_PCell_T (fin_Ghost_refmut_Perm_PCell_T perm))}
+      (! return {result}) ]
+  
+  predicate resolve_T (_1: t_T)
+  
+  predicate resolve_refmut_T [@inline:trivial] (_1: MutBorrow.t t_T) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_T
+  
+  predicate resolve_refmut_PCellNAInv_T [@inline:trivial] (_1: MutBorrow.t t_PCellNAInv_T) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_PCellNAInv_T
+  
+  predicate resolve_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T (_1: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T)
+  
+  axiom resolve_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T [resolve_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _1]. resolve_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _1
+      = resolve_refmut_PCellNAInv_T _1.inner
+  
+  predicate invariant_CellInv_T (self: t_CellInv_T) =
+    namespace_PCellNAInv_T self.permission = Namespace_PERMCELL 0 /\ public_PCellNAInv_T'0 self.permission = self.data
+  
+  predicate inv_CellInv_T (_1: t_CellInv_T)
+  
+  axiom inv_axiom'0 [@rewrite]: forall _1: t_CellInv_T [inv_CellInv_T _1]. inv_CellInv_T _1 = invariant_CellInv_T _1
+  
+  predicate invariant_ref_CellInv_T [@inline:trivial] (self: t_CellInv_T) = inv_CellInv_T self
+  
+  meta "rewrite_def" predicate invariant_ref_CellInv_T
+  
+  predicate inv_ref_CellInv_T [@inline:trivial] (_1: t_CellInv_T) = invariant_ref_CellInv_T _1
+  
+  meta "rewrite_def" predicate inv_ref_CellInv_T
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let write_T (self: t_CellInv_T) (x: t_T) (tokens: t_Tokens) (return (x'0: ())) =
+  {[@stop_split] [@expl:write_T requires] ([@stop_split] [@expl:write 'self' type invariant] inv_ref_CellInv_T self)
+    /\ ([@stop_split] [@expl:write 'x' type invariant] inv_T x)
+    /\ ([@stop_split] [@expl:write requires] contains tokens (Namespace_PERMCELL 0))}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = deref_Ghost_NonAtomicInvariant_PCellNAInv_T {self.permission}
+          (fun (_x: t_NonAtomicInvariant_PCellNAInv_T) -> [ &_9 <- _x ] s1)
+      | s1 = into_inner_Tokens {tokens} (fun (_x: t_Tokens) -> [ &_11 <- _x ] s2)
+      | s2 = open_PCellNAInv_T {_9} {_11}
+          (fun (_x: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T) -> [ &_7 <- _x ] s3)
+      | s3 = MutBorrow.borrow_final <t_Perm_PCell_T> {_7.inner.current.f0}
+          {MutBorrow.inherit_id (MutBorrow.get_id _7.inner) 0}
+          (fun (_bor: MutBorrow.t t_Perm_PCell_T) ->
+            [ &__temp <- _bor ] [ &_7 <- { _7 with inner = { _7.inner with current = { f0 = _bor.final } } } ] s4)
+      | s4 = new_refmut_Perm_PCell_T {__temp} (fun (_x: MutBorrow.t t_Perm_PCell_T) -> [ &perm <- _x ] s5)
+      | s5 = borrow_mut_T {self.data} {perm} (fun (_x: MutBorrow.t t_T) -> [ &_16 <- _x ] s6)
+      | s6 = s7 [ _ck -> (! {[@expl:type invariant] inv_T _16.current} any) ]
+      | s7 = -{resolve_T _16.current}- s8
+      | s8 = [ &_16 <- { _16 with current = x } ] s9
+      | s9 = s10 [ _ck -> (! {[@expl:type invariant] inv_refmut_T _16} any) ]
+      | s10 = -{resolve_refmut_T _16}- s11
+      | s11 = s12 [ _ck -> (! {[@expl:type invariant] inv_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _7} any) ]
+      | s12 = -{resolve_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T _7}- s13
+      | s13 = return {_ret} ] ]
+    [ & _ret: () = Any.any_l ()
+    | & self: t_CellInv_T = self
+    | & x: t_T = x
+    | & tokens: t_Tokens = tokens
+    | & __temp: MutBorrow.t t_Perm_PCell_T = Any.any_l ()
+    | & _7: t_Guarded_refmut_PCellNAInv_T_OpenGuard_PCellNAInv_T = Any.any_l ()
+    | & _9: t_NonAtomicInvariant_PCellNAInv_T = Any.any_l ()
+    | & _11: t_Tokens = Any.any_l ()
+    | & perm: MutBorrow.t t_Perm_PCell_T = Any.any_l ()
+    | & _16: MutBorrow.t t_T = Any.any_l () ]) [ return (result: ()) -> (! return {result}) ]
+end

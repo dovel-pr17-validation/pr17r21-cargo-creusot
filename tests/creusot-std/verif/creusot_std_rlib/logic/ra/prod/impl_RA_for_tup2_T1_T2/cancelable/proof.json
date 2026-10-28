@@ -1,0 +1,23 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_cancelable_tup2_T1_T2": {
+        "tactic": "split_vc",
+        "children": [
+          { "prover": "alt-ergo", "time": 0.158 },
+          { "prover": "alt-ergo", "time": 0.025 },
+          { "prover": "alt-ergo", "time": 0.029 },
+          {
+            "tactic": "split_vc",
+            "children": [
+              { "prover": "z3", "time": 0.049 },
+              { "prover": "alt-ergo", "time": 0.43 }
+            ]
+          },
+          { "prover": "z3", "time": 0.07 }
+        ]
+      }
+    }
+  }
+}

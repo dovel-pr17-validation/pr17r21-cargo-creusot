@@ -1,0 +1,36 @@
+module Float32
+  use ieee_float.Float32
+
+  type t = Float32.t
+
+  function add (a:t) (b:t) : t = Float32.add RNE a b
+  function sub (a:t) (b:t) : t = Float32.sub RNE a b
+  function mul (a:t) (b:t) : t = Float32.mul RNE a b
+  function div (a:t) (b:t) : t = Float32.div RNE a b
+  function neg (a:t) : t = Float32.neg a
+
+  predicate le (a:t) (b:t) = Float32.le a b
+  predicate lt (a:t) (b:t) = Float32.lt a b
+  predicate ge (a:t) (b:t) = Float32.ge a b
+  predicate gt (a:t) (b:t) = Float32.gt a b
+  predicate eq (a:t) (b:t) = Float32.eq a b
+  predicate ne (a:t) (b:t) = not (Float32.eq a b)
+end
+module Float64
+  use ieee_float.Float64
+
+  type t = Float64.t
+
+  function add (a:t) (b:t) : t = Float64.add RNE a b
+  function sub (a:t) (b:t) : t = Float64.sub RNE a b
+  function mul (a:t) (b:t) : t = Float64.mul RNE a b
+  function div (a:t) (b:t) : t = Float64.div RNE a b
+  function neg (a:t) : t = Float64.neg a
+
+  predicate le (a:t) (b:t) = Float64.le a b
+  predicate lt (a:t) (b:t) = Float64.lt a b
+  predicate ge (a:t) (b:t) = Float64.ge a b
+  predicate gt (a:t) (b:t) = Float64.gt a b
+  predicate eq (a:t) (b:t) = Float64.eq a b
+  predicate ne (a:t) (b:t) = not (Float64.eq a b)
+end

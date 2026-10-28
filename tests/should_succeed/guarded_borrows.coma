@@ -1,0 +1,888 @@
+module M_breaks_inv
+  use creusot.int.Int32
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  
+  predicate resolve_refmut_i32 [@inline:trivial] (_1: MutBorrow.t Int32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_i32
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let breaks_inv (bor: MutBorrow.t Int32.t) (return (x: ())) = (! bb0
+    [ bb0 = s0
+      [ s0 = [ &bor <- { bor with current = (0: Int32.t) } ] s1
+      | s1 = -{resolve_refmut_i32 bor}- s2
+      | s2 = return {_ret} ] ] [ & _ret: () = Any.any_l () | & bor: MutBorrow.t Int32.t = bor ])
+    [ return (result: ()) -> {[@stop_split] [@expl:breaks_inv ensures] bor.final = (0: Int32.t)} (! return {result}) ]
+end
+module M_breaks_inv_ghost
+  use creusot.prelude.MutBorrow
+  use creusot.int.Int32
+  use creusot.prelude.Any
+  
+  let deref_mut_Ghost_refmut_i32 (self: MutBorrow.t (MutBorrow.t Int32.t))
+    (return (x: MutBorrow.t (MutBorrow.t Int32.t))) = any
+    [ return (result: MutBorrow.t (MutBorrow.t Int32.t)) -> {[@stop_split] [@expl:deref_mut ensures] result = self}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_refmut_i32 [@inline:trivial] (_1: MutBorrow.t (MutBorrow.t Int32.t)) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_refmut_i32
+  
+  predicate resolve_refmut_i32 [@inline:trivial] (_1: MutBorrow.t Int32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_i32
+  
+  predicate resolve_Ghost_refmut_i32 [@inline:trivial] (self: MutBorrow.t Int32.t) = resolve_refmut_i32 self
+  
+  meta "rewrite_def" predicate resolve_Ghost_refmut_i32
+  
+  predicate resolve_Ghost_refmut_i32'0 [@inline:trivial] (_1: MutBorrow.t Int32.t) = resolve_Ghost_refmut_i32 _1
+  
+  meta "rewrite_def" predicate resolve_Ghost_refmut_i32'0
+  
+  let new_unit (x: ()) (return (x'0: ())) = any
+    [ return (result: ()) -> {[@stop_split] [@expl:new ensures] result = x} (! return {result}) ]
+  
+  function fin_Ghost_refmut_i32 [@inline:trivial] (self: MutBorrow.t Int32.t) : Int32.t = self.final
+  
+  meta "rewrite_def" function fin_Ghost_refmut_i32
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let breaks_inv_ghost (bor: MutBorrow.t Int32.t) (return (x: ())) = (! bb0
+    [ bb0 = s0
+      [ s0 = MutBorrow.borrow_mut <MutBorrow.t Int32.t> {bor}
+          (fun (_bor: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_7 <- _bor ] [ &bor <- _bor.final ] s1)
+      | s1 = deref_mut_Ghost_refmut_i32 {_7} (fun (_x: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_6 <- _x ] s2)
+      | s2 = [ &_6 <- { _6 with current = { _6.current with current = (0: Int32.t) } } ] s3
+      | s3 = -{resolve_refmut_refmut_i32 _6}- s4
+      | s4 = -{resolve_Ghost_refmut_i32'0 bor}- s5
+      | s5 = new_unit {_5} (fun (_x: ()) -> [ &_4 <- _x ] s6)
+      | s6 = return {_ret} ] ]
+    [ & _ret: () = Any.any_l ()
+    | & bor: MutBorrow.t Int32.t = bor
+    | & _4: () = Any.any_l ()
+    | & _5: () = Any.any_l ()
+    | & _6: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l ()
+    | & _7: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l () ])
+    [ return (result: ()) -> {[@stop_split] [@expl:breaks_inv_ghost ensures] fin_Ghost_refmut_i32 bor = (0: Int32.t)}
+      (! return {result}) ]
+end
+module M_example
+  use creusot.int.Int32
+  use creusot.prelude.MutBorrow
+  use map.Map
+  use creusot.prelude.Any
+  
+  type t_Guarded_refmut_i32_Mapping_i32_bool = {
+    inner: MutBorrow.t Int32.t;
+    _guard: Map.map Int32.t bool;
+    _initial: MutBorrow.t Int32.t }
+  
+  predicate index_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (a: Int32.t) = Map.get self a
+  
+  meta "rewrite_def" predicate index_Mapping_i32_bool
+  
+  predicate guards_ref_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (x: Int32.t) =
+    index_Mapping_i32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_i32_bool
+  
+  predicate guards_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (initial: MutBorrow.t Int32.t) (current': MutBorrow.t Int32.t) =
+    guards_ref_Mapping_i32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_i32_bool
+  
+  predicate invariant_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) =
+    guards_Mapping_i32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_Guarded_refmut_i32_Mapping_i32_bool (_1: t_Guarded_refmut_i32_Mapping_i32_bool)
+  
+  axiom inv_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_i32_Mapping_i32_bool [inv_Guarded_refmut_i32_Mapping_i32_bool _1]. inv_Guarded_refmut_i32_Mapping_i32_bool _1
+      = invariant_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  function guard_refmut_i32 [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) : Map.map Int32.t bool =
+    self._guard
+  
+  meta "rewrite_def" function guard_refmut_i32
+  
+  let new_i32 (borrow: MutBorrow.t Int32.t) (guard: Map.map Int32.t bool)
+    (return (x: t_Guarded_refmut_i32_Mapping_i32_bool)) =
+  {[@stop_split] [@expl:new requires] guards_ref_Mapping_i32_bool guard borrow.current}
+    any
+    [ return (result: t_Guarded_refmut_i32_Mapping_i32_bool) ->
+    {[@stop_split] [@expl:new_i32 ensures] ([@stop_split] [@expl:new result type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool result)
+      /\ ([@stop_split] [@expl:new ensures #0] result.inner = borrow)
+      /\ ([@stop_split] [@expl:new ensures #1] guard_refmut_i32 result = guard)
+      /\ ([@stop_split] [@expl:new ensures #2] guards_ref_Mapping_i32_bool guard borrow.final)}
+      (! return {result}) ]
+  
+  let breaks_inv (bor: MutBorrow.t Int32.t) (return (x: ())) = any
+    [ return (result: ()) -> {[@stop_split] [@expl:breaks_inv ensures] bor.final = (0: Int32.t)} (! return {result}) ]
+  
+  let takes_guarded (_guarded: t_Guarded_refmut_i32_Mapping_i32_bool) (return (x: ())) =
+  {[@stop_split] [@expl:takes_guarded '_guarded' type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool _guarded}
+    any [ return (result: ()) -> (! return {result}) ]
+  
+  predicate resolve_refmut_i32 [@inline:trivial] (_1: MutBorrow.t Int32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_i32
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let example (return (x: Int32.t)) = (! bb0
+    [ bb0 = s0
+      [ s0 = [ &x <- (1: Int32.t) ] s1
+      | s1 = MutBorrow.borrow_mut <Int32.t> {x}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &bor <- _bor ] [ &x <- _bor.final ] s2)
+      | s2 = [ &_6 <- fun (x'0: Int32.t) -> x'0 = (1: Int32.t) ] s3
+      | s3 = MutBorrow.borrow_final <Int32.t> {bor.current} {MutBorrow.get_id bor}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_5 <- _bor ] [ &bor <- { bor with current = _bor.final } ] s4)
+      | s4 = new_i32 {_5} {_6} (fun (_x: t_Guarded_refmut_i32_Mapping_i32_bool) -> [ &guarded <- _x ] s5)
+      | s5 = MutBorrow.borrow_mut <Int32.t> {guarded.inner.current}
+          (fun (_bor: MutBorrow.t Int32.t) ->
+            [ &_9 <- _bor ] [ &guarded <- { guarded with inner = { guarded.inner with current = _bor.final } } ] s6)
+      | s6 = breaks_inv {_9} (fun (_x: ()) -> [ &_8 <- _x ] s7)
+      | s7 = [ &guarded <- { guarded with inner = { guarded.inner with current = (1: Int32.t) } } ] s8
+      | s8 = takes_guarded {guarded} (fun (_x: ()) -> [ &_10 <- _x ] s9)
+      | s9 = -{resolve_refmut_i32 bor}- s10
+      | s10 = [ &_ret <- x ] s11
+      | s11 = return {_ret} ] ]
+    [ & _ret: Int32.t = Any.any_l ()
+    | & x: Int32.t = Any.any_l ()
+    | & bor: MutBorrow.t Int32.t = Any.any_l ()
+    | & guarded: t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l ()
+    | & _5: MutBorrow.t Int32.t = Any.any_l ()
+    | & _6: Map.map Int32.t bool = Any.any_l ()
+    | & _8: () = Any.any_l ()
+    | & _9: MutBorrow.t Int32.t = Any.any_l ()
+    | & _10: () = Any.any_l () ])
+    [ return (result: Int32.t) -> {[@stop_split] [@expl:example ensures] result = (1: Int32.t)} (! return {result}) ]
+end
+module M_ghostified
+  use creusot.int.Int32
+  use creusot.prelude.MutBorrow
+  use map.Map
+  use creusot.prelude.Any
+  
+  let new_i32 (x: Int32.t) (return (x'0: Int32.t)) = any
+    [ return (result: Int32.t) -> {[@stop_split] [@expl:new ensures] result = x} (! return {result}) ]
+  
+  let deref_mut_Ghost_i32 (self: MutBorrow.t Int32.t) (return (x: MutBorrow.t Int32.t)) = any
+    [ return (result: MutBorrow.t Int32.t) -> {[@stop_split] [@expl:deref_mut ensures] result = self}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_i32 [@inline:trivial] (_1: MutBorrow.t Int32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_i32
+  
+  let new_refmut_i32 (x: MutBorrow.t Int32.t) (return (x'0: MutBorrow.t Int32.t)) = any
+    [ return (result: MutBorrow.t Int32.t) -> {[@stop_split] [@expl:new ensures] result = x} (! return {result}) ]
+  
+  let into_inner_refmut_i32 (self: MutBorrow.t Int32.t) (return (x: MutBorrow.t Int32.t)) = any
+    [ return (result: MutBorrow.t Int32.t) -> {[@stop_split] [@expl:into_inner ensures] result = self}
+      (! return {result}) ]
+  
+  type t_Guarded_refmut_i32_Mapping_i32_bool = {
+    inner: MutBorrow.t Int32.t;
+    _guard: Map.map Int32.t bool;
+    _initial: MutBorrow.t Int32.t }
+  
+  predicate index_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (a: Int32.t) = Map.get self a
+  
+  meta "rewrite_def" predicate index_Mapping_i32_bool
+  
+  predicate guards_ref_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (x: Int32.t) =
+    index_Mapping_i32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_i32_bool
+  
+  predicate guards_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (initial: MutBorrow.t Int32.t) (current': MutBorrow.t Int32.t) =
+    guards_ref_Mapping_i32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_i32_bool
+  
+  predicate invariant_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) =
+    guards_Mapping_i32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_Guarded_refmut_i32_Mapping_i32_bool (_1: t_Guarded_refmut_i32_Mapping_i32_bool)
+  
+  axiom inv_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_i32_Mapping_i32_bool [inv_Guarded_refmut_i32_Mapping_i32_bool _1]. inv_Guarded_refmut_i32_Mapping_i32_bool _1
+      = invariant_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  function guard_refmut_i32 [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) : Map.map Int32.t bool =
+    self._guard
+  
+  meta "rewrite_def" function guard_refmut_i32
+  
+  let new_i32'0 (borrow: MutBorrow.t Int32.t) (guard: Map.map Int32.t bool)
+    (return (x: t_Guarded_refmut_i32_Mapping_i32_bool)) =
+  {[@stop_split] [@expl:new requires] guards_ref_Mapping_i32_bool guard borrow.current}
+    any
+    [ return (result: t_Guarded_refmut_i32_Mapping_i32_bool) ->
+    {[@stop_split] [@expl:new_i32 ensures] ([@stop_split] [@expl:new result type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool result)
+      /\ ([@stop_split] [@expl:new ensures #0] result.inner = borrow)
+      /\ ([@stop_split] [@expl:new ensures #1] guard_refmut_i32 result = guard)
+      /\ ([@stop_split] [@expl:new ensures #2] guards_ref_Mapping_i32_bool guard borrow.final)}
+      (! return {result}) ]
+  
+  predicate invariant_Ghost_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) =
+    inv_Guarded_refmut_i32_Mapping_i32_bool self
+  
+  meta "rewrite_def" predicate invariant_Ghost_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (_1: t_Guarded_refmut_i32_Mapping_i32_bool) =
+    invariant_Ghost_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  meta "rewrite_def" predicate inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool
+  
+  let new_Guarded_refmut_i32_Mapping_i32_bool (x: t_Guarded_refmut_i32_Mapping_i32_bool)
+    (return (x'0: t_Guarded_refmut_i32_Mapping_i32_bool)) =
+  {[@stop_split] [@expl:new 'x' type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool x}
+    any
+    [ return (result: t_Guarded_refmut_i32_Mapping_i32_bool) ->
+    {[@stop_split] [@expl:new_Guarded_refmut_i32_Mapping_i32_bool ensures] ([@stop_split] [@expl:new result type invariant] inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool result)
+      /\ ([@stop_split] [@expl:new ensures] result = x)}
+      (! return {result}) ]
+  
+  predicate invariant_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) =
+    inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool self.current
+    /\ inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (_1: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) =
+    invariant_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  meta "rewrite_def" predicate inv_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate invariant_refmut_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) =
+    inv_Guarded_refmut_i32_Mapping_i32_bool self.current /\ inv_Guarded_refmut_i32_Mapping_i32_bool self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_refmut_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (_1: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) =
+    invariant_refmut_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  meta "rewrite_def" predicate inv_refmut_Guarded_refmut_i32_Mapping_i32_bool
+  
+  let deref_mut_Ghost_Guarded_refmut_i32_Mapping_i32_bool (self: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool)
+    (return (x: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool)) =
+  {[@stop_split] [@expl:deref_mut 'self' type invariant] inv_refmut_Ghost_Guarded_refmut_i32_Mapping_i32_bool self}
+    any
+    [ return (result: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) ->
+    {[@stop_split] [@expl:deref_mut_Ghost_Guarded_refmut_i32_Mapping_i32_bool ensures] ([@stop_split] [@expl:deref_mut result type invariant] inv_refmut_Guarded_refmut_i32_Mapping_i32_bool result)
+      /\ ([@stop_split] [@expl:deref_mut ensures] result = self)}
+      (! return {result}) ]
+  
+  let deref_mut_Ghost_refmut_i32 (self: MutBorrow.t (MutBorrow.t Int32.t))
+    (return (x: MutBorrow.t (MutBorrow.t Int32.t))) = any
+    [ return (result: MutBorrow.t (MutBorrow.t Int32.t)) -> {[@stop_split] [@expl:deref_mut ensures] result = self}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_refmut_i32 [@inline:trivial] (_1: MutBorrow.t (MutBorrow.t Int32.t)) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_refmut_i32
+  
+  function fin_Ghost_refmut_i32 [@inline:trivial] (self: MutBorrow.t Int32.t) : Int32.t = self.final
+  
+  meta "rewrite_def" function fin_Ghost_refmut_i32
+  
+  let breaks_inv_ghost (bor: MutBorrow.t Int32.t) (return (x: ())) = any
+    [ return (result: ()) -> {[@stop_split] [@expl:breaks_inv_ghost ensures] fin_Ghost_refmut_i32 bor = (0: Int32.t)}
+      (! return {result}) ]
+  
+  predicate resolve_Ghost_refmut_i32 [@inline:trivial] (self: MutBorrow.t Int32.t) = resolve_refmut_i32 self
+  
+  meta "rewrite_def" predicate resolve_Ghost_refmut_i32
+  
+  predicate resolve_Ghost_refmut_i32'0 [@inline:trivial] (_1: MutBorrow.t Int32.t) = resolve_Ghost_refmut_i32 _1
+  
+  meta "rewrite_def" predicate resolve_Ghost_refmut_i32'0
+  
+  predicate resolve_refmut_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (_1: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) =
+    _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_Guarded_refmut_i32_Mapping_i32_bool
+  
+  let new_unit (x: ()) (return (x'0: ())) = any
+    [ return (result: ()) -> {[@stop_split] [@expl:new ensures] result = x} (! return {result}) ]
+  
+  let into_inner_Guarded_refmut_i32_Mapping_i32_bool (self: t_Guarded_refmut_i32_Mapping_i32_bool)
+    (return (x: t_Guarded_refmut_i32_Mapping_i32_bool)) =
+  {[@stop_split] [@expl:into_inner 'self' type invariant] inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool self}
+    any
+    [ return (result: t_Guarded_refmut_i32_Mapping_i32_bool) ->
+    {[@stop_split] [@expl:into_inner_Guarded_refmut_i32_Mapping_i32_bool ensures] ([@stop_split] [@expl:into_inner result type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool result)
+      /\ ([@stop_split] [@expl:into_inner ensures] result = self)}
+      (! return {result}) ]
+  
+  let takes_guarded (_guarded: t_Guarded_refmut_i32_Mapping_i32_bool) (return (x: ())) =
+  {[@stop_split] [@expl:takes_guarded '_guarded' type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool _guarded}
+    any [ return (result: ()) -> (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let ghostified (return (x: Int32.t)) = (! bb0
+    [ bb0 = s0
+      [ s0 = new_i32 {(1: Int32.t)} (fun (_x: Int32.t) -> [ &x <- _x ] s1)
+      | s1 = MutBorrow.borrow_mut <Int32.t> {x}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_9 <- _bor ] [ &x <- _bor.final ] s2)
+      | s2 = deref_mut_Ghost_i32 {_9} (fun (_x: MutBorrow.t Int32.t) -> [ &_8 <- _x ] s3)
+      | s3 = MutBorrow.borrow_final <Int32.t> {_8.current} {MutBorrow.get_id _8}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_7 <- _bor ] [ &_8 <- { _8 with current = _bor.final } ] s4)
+      | s4 = -{resolve_refmut_i32 _8}- s5
+      | s5 = MutBorrow.borrow_final <Int32.t> {_7.current} {MutBorrow.get_id _7}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_6 <- _bor ] [ &_7 <- { _7 with current = _bor.final } ] s6)
+      | s6 = -{resolve_refmut_i32 _7}- s7
+      | s7 = MutBorrow.borrow_final <Int32.t> {_6.current} {MutBorrow.get_id _6}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_5 <- _bor ] [ &_6 <- { _6 with current = _bor.final } ] s8)
+      | s8 = new_refmut_i32 {_5} (fun (_x: MutBorrow.t Int32.t) -> [ &bor <- _x ] s9)
+      | s9 = -{resolve_refmut_i32 _6}- s10
+      | s10 = into_inner_refmut_i32 {bor} (fun (_x: MutBorrow.t Int32.t) -> [ &_13 <- _x ] s11)
+      | s11 = [ &_15 <- fun (x'0: Int32.t) -> x'0 = (1: Int32.t) ] s12
+      | s12 = MutBorrow.borrow_final <Int32.t> {_13.current} {MutBorrow.get_id _13}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_12 <- _bor ] [ &_13 <- { _13 with current = _bor.final } ] s13)
+      | s13 = new_i32'0 {_12} {_15} (fun (_x: t_Guarded_refmut_i32_Mapping_i32_bool) -> [ &_11 <- _x ] s14)
+      | s14 = -{resolve_refmut_i32 _13}- s15
+      | s15 = new_Guarded_refmut_i32_Mapping_i32_bool {_11}
+          (fun (_x: t_Guarded_refmut_i32_Mapping_i32_bool) -> [ &guarded <- _x ] s16)
+      | s16 = MutBorrow.borrow_mut <t_Guarded_refmut_i32_Mapping_i32_bool> {guarded}
+          (fun (_bor: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) ->
+            [ &_19 <- _bor ] -{inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool _bor.final}-
+            [ &guarded <- _bor.final ] s17)
+        [ _ck -> (! {[@expl:type invariant] inv_Ghost_Guarded_refmut_i32_Mapping_i32_bool guarded} any) ]
+      | s17 = deref_mut_Ghost_Guarded_refmut_i32_Mapping_i32_bool {_19}
+          (fun (_x: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool) -> [ &_18 <- _x ] s18)
+      | s18 = MutBorrow.borrow_mut <Int32.t> {_18.current.inner.current}
+          (fun (_bor: MutBorrow.t Int32.t) ->
+            [ &__temp <- _bor ]
+            [ &_18 <- { _18 with current = { _18.current with inner = { _18.current.inner with current = _bor.final } } } ]
+            s19)
+      | s19 = new_refmut_i32 {__temp} (fun (_x: MutBorrow.t Int32.t) -> [ &borrow <- _x ] s20)
+      | s20 = MutBorrow.borrow_mut <MutBorrow.t Int32.t> {borrow}
+          (fun (_bor: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_29 <- _bor ] [ &borrow <- _bor.final ] s21)
+      | s21 = deref_mut_Ghost_refmut_i32 {_29} (fun (_x: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_28 <- _x ] s22)
+      | s22 = MutBorrow.borrow_mut <Int32.t> {_28.current.current}
+          (fun (_bor: MutBorrow.t Int32.t) ->
+            [ &_27 <- _bor ] [ &_28 <- { _28 with current = { _28.current with current = _bor.final } } ] s23)
+      | s23 = MutBorrow.borrow_final <Int32.t> {_27.current} {MutBorrow.get_id _27}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_26 <- _bor ] [ &_27 <- { _27 with current = _bor.final } ] s24)
+      | s24 = -{resolve_refmut_refmut_i32 _28}- s25
+      | s25 = -{resolve_refmut_i32 _27}- s26
+      | s26 = MutBorrow.borrow_final <Int32.t> {_26.current} {MutBorrow.get_id _26}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_25 <- _bor ] [ &_26 <- { _26 with current = _bor.final } ] s27)
+      | s27 = -{resolve_refmut_i32 _26}- s28
+      | s28 = MutBorrow.borrow_final <Int32.t> {_25.current} {MutBorrow.get_id _25}
+          (fun (_bor: MutBorrow.t Int32.t) -> [ &_24 <- _bor ] [ &_25 <- { _25 with current = _bor.final } ] s29)
+      | s29 = new_refmut_i32 {_24} (fun (_x: MutBorrow.t Int32.t) -> [ &_23 <- _x ] s30)
+      | s30 = -{resolve_refmut_i32 _25}- s31
+      | s31 = breaks_inv_ghost {_23} (fun (_x: ()) -> [ &_22 <- _x ] s32)
+      | s32 = MutBorrow.borrow_mut <MutBorrow.t Int32.t> {borrow}
+          (fun (_bor: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_33 <- _bor ] [ &borrow <- _bor.final ] s33)
+      | s33 = deref_mut_Ghost_refmut_i32 {_33} (fun (_x: MutBorrow.t (MutBorrow.t Int32.t)) -> [ &_32 <- _x ] s34)
+      | s34 = [ &_32 <- { _32 with current = { _32.current with current = (1: Int32.t) } } ] s35
+      | s35 = -{resolve_refmut_refmut_i32 _32}- s36
+      | s36 = -{resolve_Ghost_refmut_i32'0 borrow}- s37
+      | s37 = s38 [ _ck -> (! {[@expl:type invariant] inv_refmut_Guarded_refmut_i32_Mapping_i32_bool _18} any) ]
+      | s38 = -{resolve_refmut_Guarded_refmut_i32_Mapping_i32_bool _18}- s39
+      | s39 = new_unit {_31} (fun (_x: ()) -> [ &_30 <- _x ] s40)
+      | s40 = into_inner_Guarded_refmut_i32_Mapping_i32_bool {guarded}
+          (fun (_x: t_Guarded_refmut_i32_Mapping_i32_bool) -> [ &_36 <- _x ] s41)
+      | s41 = takes_guarded {_36} (fun (_x: ()) -> [ &_35 <- _x ] s42)
+      | s42 = new_unit {_35} (fun (_x: ()) -> [ &_34 <- _x ] s43)
+      | s43 = [ &_ret <- x ] s44
+      | s44 = return {_ret} ] ]
+    [ & _ret: Int32.t = Any.any_l ()
+    | & x: Int32.t = Any.any_l ()
+    | & bor: MutBorrow.t Int32.t = Any.any_l ()
+    | & _5: MutBorrow.t Int32.t = Any.any_l ()
+    | & _6: MutBorrow.t Int32.t = Any.any_l ()
+    | & _7: MutBorrow.t Int32.t = Any.any_l ()
+    | & _8: MutBorrow.t Int32.t = Any.any_l ()
+    | & _9: MutBorrow.t Int32.t = Any.any_l ()
+    | & guarded: t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l ()
+    | & _11: t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l ()
+    | & _12: MutBorrow.t Int32.t = Any.any_l ()
+    | & _13: MutBorrow.t Int32.t = Any.any_l ()
+    | & _15: Map.map Int32.t bool = Any.any_l ()
+    | & __temp: MutBorrow.t Int32.t = Any.any_l ()
+    | & _18: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l ()
+    | & _19: MutBorrow.t t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l ()
+    | & borrow: MutBorrow.t Int32.t = Any.any_l ()
+    | & _22: () = Any.any_l ()
+    | & _23: MutBorrow.t Int32.t = Any.any_l ()
+    | & _24: MutBorrow.t Int32.t = Any.any_l ()
+    | & _25: MutBorrow.t Int32.t = Any.any_l ()
+    | & _26: MutBorrow.t Int32.t = Any.any_l ()
+    | & _27: MutBorrow.t Int32.t = Any.any_l ()
+    | & _28: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l ()
+    | & _29: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l ()
+    | & _30: () = Any.any_l ()
+    | & _31: () = Any.any_l ()
+    | & _32: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l ()
+    | & _33: MutBorrow.t (MutBorrow.t Int32.t) = Any.any_l ()
+    | & _34: () = Any.any_l ()
+    | & _35: () = Any.any_l ()
+    | & _36: t_Guarded_refmut_i32_Mapping_i32_bool = Any.any_l () ])
+    [ return (result: Int32.t) -> {[@stop_split] [@expl:ghostified ensures] result = (1: Int32.t)} (! return {result}) ]
+end
+module M_impl_SumSmaller10__eq_5 (* SumSmaller10 *)
+  use creusot.int.UInt32
+  use creusot.prelude.MutBorrow
+  use map.Map
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_SumSmaller10 = { a: UInt32.t; b: UInt32.t }
+  
+  predicate invariant_SumSmaller10 (self: t_SumSmaller10) = UInt32.t'int self.a + UInt32.t'int self.b <= 10
+  
+  predicate inv_SumSmaller10 (_1: t_SumSmaller10)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_SumSmaller10 [inv_SumSmaller10 _1]. inv_SumSmaller10 _1
+      = invariant_SumSmaller10 _1
+  
+  type t_Guarded_refmut_u32_Mapping_u32_bool = {
+    inner: MutBorrow.t UInt32.t;
+    _guard: Map.map UInt32.t bool;
+    _initial: MutBorrow.t UInt32.t }
+  
+  predicate invariant_refmut_SumSmaller10 [@inline:trivial] (self: MutBorrow.t t_SumSmaller10) =
+    inv_SumSmaller10 self.current /\ inv_SumSmaller10 self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_SumSmaller10
+  
+  predicate inv_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) =
+    invariant_refmut_SumSmaller10 _1
+  
+  meta "rewrite_def" predicate inv_refmut_SumSmaller10
+  
+  predicate index_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (a'0: UInt32.t) = Map.get self a'0
+  
+  meta "rewrite_def" predicate index_Mapping_u32_bool
+  
+  predicate guards_ref_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (x: UInt32.t) =
+    index_Mapping_u32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_u32_bool
+  
+  predicate guards_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (initial: MutBorrow.t UInt32.t) (current': MutBorrow.t UInt32.t) =
+    guards_ref_Mapping_u32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_u32_bool
+  
+  predicate invariant_Guarded_refmut_u32_Mapping_u32_bool [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) =
+    guards_Mapping_u32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_u32_Mapping_u32_bool
+  
+  predicate inv_Guarded_refmut_u32_Mapping_u32_bool (_1: t_Guarded_refmut_u32_Mapping_u32_bool)
+  
+  axiom inv_axiom'0 [@rewrite]:
+    forall _1: t_Guarded_refmut_u32_Mapping_u32_bool [inv_Guarded_refmut_u32_Mapping_u32_bool _1]. inv_Guarded_refmut_u32_Mapping_u32_bool _1
+      = invariant_Guarded_refmut_u32_Mapping_u32_bool _1
+  
+  function guard_refmut_u32 [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) : Map.map UInt32.t bool =
+    self._guard
+  
+  meta "rewrite_def" function guard_refmut_u32
+  
+  let get_a_mut_5 (self: MutBorrow.t t_SumSmaller10) (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:get_a_mut_5 requires] ([@stop_split] [@expl:get_a_mut_5 'self' type invariant] inv_refmut_SumSmaller10 self)
+    /\ ([@stop_split] [@expl:get_a_mut_5 requires] UInt32.t'int self.current.a + UInt32.t'int self.current.b <= 5)}
+    any
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:get_a_mut_5 ensures] ([@stop_split] [@expl:get_a_mut_5 result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #0] guard_refmut_u32 result
+        = (fun (a'0: UInt32.t) -> UInt32.t'int a'0 + UInt32.t'int self.current.b <= 5))
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #1] result.inner.current = self.current.a)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #2] self.final.b = self.current.b)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #3] self.final.a = result.inner.final)}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_u32 [@inline:trivial] (_1: MutBorrow.t UInt32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_u32
+  
+  predicate resolve_Guarded_refmut_u32_Mapping_u32_bool (_1: t_Guarded_refmut_u32_Mapping_u32_bool)
+  
+  axiom resolve_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_u32_Mapping_u32_bool [resolve_Guarded_refmut_u32_Mapping_u32_bool _1]. resolve_Guarded_refmut_u32_Mapping_u32_bool _1
+      = resolve_refmut_u32 _1.inner
+  
+  predicate resolve_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_SumSmaller10
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let eq_5 (self: MutBorrow.t t_SumSmaller10) (return (x: ())) =
+  {[@stop_split] [@expl:eq_5 requires] ([@stop_split] [@expl:eq_5 'self' type invariant] inv_refmut_SumSmaller10 self)
+    /\ ([@stop_split] [@expl:eq_5 requires] UInt32.t'int self.current.a + UInt32.t'int self.current.b <= 5)}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = [ &b'0 <- self.current.b ] s1
+      | s1 = MutBorrow.borrow_final <t_SumSmaller10> {self.current} {MutBorrow.get_id self}
+          (fun (_bor: MutBorrow.t t_SumSmaller10) ->
+            [ &_12 <- _bor ] -{inv_SumSmaller10 _bor.final}-
+            [ &self <- { self with current = _bor.final } ] s2)
+        [ _ck -> (! {[@expl:type invariant] inv_SumSmaller10 self.current} any) ]
+      | s2 = get_a_mut_5 {_12} (fun (_x: t_Guarded_refmut_u32_Mapping_u32_bool) -> [ &_11 <- _x ] s3)
+      | s3 = MutBorrow.borrow_final <UInt32.t> {_11.inner.current} {MutBorrow.get_id _11.inner}
+          (fun (_bor: MutBorrow.t UInt32.t) ->
+            [ &a'0 <- _bor ] [ &_11 <- { _11 with inner = { _11.inner with current = _bor.final } } ] s4)
+      | s4 = [ &a'0 <- { a'0 with current = (42: UInt32.t) } ] s5
+      | s5 = UInt32.sub {(5: UInt32.t)} {b'0} (fun (_x: UInt32.t) -> [ &a'0 <- { a'0 with current = _x } ] s6)
+      | s6 = -{resolve_refmut_u32 a'0}- s7
+      | s7 = s8 [ _ck -> (! {[@expl:type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool _11} any) ]
+      | s8 = -{resolve_Guarded_refmut_u32_Mapping_u32_bool _11}- s9
+      | s9 = s10 [ _ck -> (! {[@expl:type invariant] inv_refmut_SumSmaller10 self} any) ]
+      | s10 = -{resolve_refmut_SumSmaller10 self}- s11
+      | s11 = return {_ret} ] ]
+    [ & _ret: () = Any.any_l ()
+    | & self: MutBorrow.t t_SumSmaller10 = self
+    | & b'0: UInt32.t = Any.any_l ()
+    | & a'0: MutBorrow.t UInt32.t = Any.any_l ()
+    | & _11: t_Guarded_refmut_u32_Mapping_u32_bool = Any.any_l ()
+    | & _12: MutBorrow.t t_SumSmaller10 = Any.any_l () ])
+    [ return (result: ()) ->
+    {[@stop_split] [@expl:eq_5 ensures] ([@stop_split] [@expl:eq_5 ensures #0] UInt32.t'int self.final.a
+          + UInt32.t'int self.final.b
+        = 5)
+      /\ ([@stop_split] [@expl:eq_5 ensures #1] self.final.b = self.current.b)}
+      (! return {result}) ]
+end
+module M_impl_SumSmaller10__get_a_mut (* SumSmaller10 *)
+  use creusot.int.UInt32
+  use creusot.prelude.MutBorrow
+  use map.Map
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_SumSmaller10 = { a: UInt32.t; b: UInt32.t }
+  
+  type t_Guarded_refmut_u32_Mapping_u32_bool = {
+    inner: MutBorrow.t UInt32.t;
+    _guard: Map.map UInt32.t bool;
+    _initial: MutBorrow.t UInt32.t }
+  
+  predicate index_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (a'0: UInt32.t) = Map.get self a'0
+  
+  meta "rewrite_def" predicate index_Mapping_u32_bool
+  
+  predicate guards_ref_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (x: UInt32.t) =
+    index_Mapping_u32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_u32_bool
+  
+  predicate guards_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (initial: MutBorrow.t UInt32.t) (current': MutBorrow.t UInt32.t) =
+    guards_ref_Mapping_u32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_u32_bool
+  
+  predicate invariant_Guarded_refmut_u32_Mapping_u32_bool [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) =
+    guards_Mapping_u32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_u32_Mapping_u32_bool
+  
+  predicate inv_Guarded_refmut_u32_Mapping_u32_bool (_1: t_Guarded_refmut_u32_Mapping_u32_bool)
+  
+  axiom inv_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_u32_Mapping_u32_bool [inv_Guarded_refmut_u32_Mapping_u32_bool _1]. inv_Guarded_refmut_u32_Mapping_u32_bool _1
+      = invariant_Guarded_refmut_u32_Mapping_u32_bool _1
+  
+  function guard_refmut_u32 [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) : Map.map UInt32.t bool =
+    self._guard
+  
+  meta "rewrite_def" function guard_refmut_u32
+  
+  let new_u32 (borrow: MutBorrow.t UInt32.t) (guard: Map.map UInt32.t bool)
+    (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:new requires] guards_ref_Mapping_u32_bool guard borrow.current}
+    any
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:new_u32 ensures] ([@stop_split] [@expl:new result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:new ensures #0] result.inner = borrow)
+      /\ ([@stop_split] [@expl:new ensures #1] guard_refmut_u32 result = guard)
+      /\ ([@stop_split] [@expl:new ensures #2] guards_ref_Mapping_u32_bool guard borrow.final)}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_u32 [@inline:trivial] (_1: MutBorrow.t UInt32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_u32
+  
+  predicate invariant_SumSmaller10 (self: t_SumSmaller10) = UInt32.t'int self.a + UInt32.t'int self.b <= 10
+  
+  predicate inv_SumSmaller10 (_1: t_SumSmaller10)
+  
+  axiom inv_axiom'0 [@rewrite]: forall _1: t_SumSmaller10 [inv_SumSmaller10 _1]. inv_SumSmaller10 _1
+      = invariant_SumSmaller10 _1
+  
+  predicate invariant_refmut_SumSmaller10 [@inline:trivial] (self: MutBorrow.t t_SumSmaller10) =
+    inv_SumSmaller10 self.current /\ inv_SumSmaller10 self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_SumSmaller10
+  
+  predicate inv_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) =
+    invariant_refmut_SumSmaller10 _1
+  
+  meta "rewrite_def" predicate inv_refmut_SumSmaller10
+  
+  predicate resolve_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_SumSmaller10
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let get_a_mut (self: MutBorrow.t t_SumSmaller10) (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:get_a_mut 'self' type invariant] inv_refmut_SumSmaller10 self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = [ &g <- fun (a'0: UInt32.t) -> UInt32.t'int a'0 + UInt32.t'int self.current.b <= 10 ] s1
+      | s1 = MutBorrow.borrow_final <UInt32.t> {self.current.a} {MutBorrow.inherit_id (MutBorrow.get_id self) 0}
+          (fun (_bor: MutBorrow.t UInt32.t) ->
+            [ &_14 <- _bor ] [ &self <- { self with current = { self.current with a = _bor.final } } ] s2)
+      | s2 = MutBorrow.borrow_final <UInt32.t> {_14.current} {MutBorrow.get_id _14}
+          (fun (_bor: MutBorrow.t UInt32.t) -> [ &_13 <- _bor ] [ &_14 <- { _14 with current = _bor.final } ] s3)
+      | s3 = new_u32 {_13} {g} (fun (_x: t_Guarded_refmut_u32_Mapping_u32_bool) -> [ &_ret <- _x ] s4)
+      | s4 = -{resolve_refmut_u32 _14}- s5
+      | s5 = s6 [ _ck -> (! {[@expl:type invariant] inv_refmut_SumSmaller10 self} any) ]
+      | s6 = -{resolve_refmut_SumSmaller10 self}- s7
+      | s7 = return {_ret} ] ]
+    [ & _ret: t_Guarded_refmut_u32_Mapping_u32_bool = Any.any_l ()
+    | & self: MutBorrow.t t_SumSmaller10 = self
+    | & g: Map.map UInt32.t bool = Any.any_l ()
+    | & _13: MutBorrow.t UInt32.t = Any.any_l ()
+    | & _14: MutBorrow.t UInt32.t = Any.any_l () ])
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:get_a_mut ensures] ([@stop_split] [@expl:get_a_mut result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #0] guard_refmut_u32 result
+        = (fun (a'0: UInt32.t) -> UInt32.t'int a'0 + UInt32.t'int self.current.b <= 10))
+      /\ ([@stop_split] [@expl:get_a_mut ensures #1] result.inner.current = self.current.a)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #2] self.final.b = self.current.b)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #3] self.final.a = result.inner.final)}
+      (! return {result}) ]
+end
+module M_impl_SumSmaller10__get_a_mut_5 (* SumSmaller10 *)
+  use creusot.int.UInt32
+  use creusot.prelude.MutBorrow
+  use map.Map
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_SumSmaller10 = { a: UInt32.t; b: UInt32.t }
+  
+  predicate invariant_SumSmaller10 (self: t_SumSmaller10) = UInt32.t'int self.a + UInt32.t'int self.b <= 10
+  
+  predicate inv_SumSmaller10 (_1: t_SumSmaller10)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_SumSmaller10 [inv_SumSmaller10 _1]. inv_SumSmaller10 _1
+      = invariant_SumSmaller10 _1
+  
+  type t_Guarded_refmut_u32_Mapping_u32_bool = {
+    inner: MutBorrow.t UInt32.t;
+    _guard: Map.map UInt32.t bool;
+    _initial: MutBorrow.t UInt32.t }
+  
+  predicate invariant_refmut_SumSmaller10 [@inline:trivial] (self: MutBorrow.t t_SumSmaller10) =
+    inv_SumSmaller10 self.current /\ inv_SumSmaller10 self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_SumSmaller10
+  
+  predicate inv_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) =
+    invariant_refmut_SumSmaller10 _1
+  
+  meta "rewrite_def" predicate inv_refmut_SumSmaller10
+  
+  predicate index_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (a'0: UInt32.t) = Map.get self a'0
+  
+  meta "rewrite_def" predicate index_Mapping_u32_bool
+  
+  predicate guards_ref_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (x: UInt32.t) =
+    index_Mapping_u32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_u32_bool
+  
+  predicate guards_Mapping_u32_bool [@inline:trivial] (self: Map.map UInt32.t bool) (initial: MutBorrow.t UInt32.t) (current': MutBorrow.t UInt32.t) =
+    guards_ref_Mapping_u32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_u32_bool
+  
+  predicate invariant_Guarded_refmut_u32_Mapping_u32_bool [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) =
+    guards_Mapping_u32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_u32_Mapping_u32_bool
+  
+  predicate inv_Guarded_refmut_u32_Mapping_u32_bool (_1: t_Guarded_refmut_u32_Mapping_u32_bool)
+  
+  axiom inv_axiom'0 [@rewrite]:
+    forall _1: t_Guarded_refmut_u32_Mapping_u32_bool [inv_Guarded_refmut_u32_Mapping_u32_bool _1]. inv_Guarded_refmut_u32_Mapping_u32_bool _1
+      = invariant_Guarded_refmut_u32_Mapping_u32_bool _1
+  
+  function guard_refmut_u32 [@inline:trivial] (self: t_Guarded_refmut_u32_Mapping_u32_bool) : Map.map UInt32.t bool =
+    self._guard
+  
+  meta "rewrite_def" function guard_refmut_u32
+  
+  let get_a_mut (self: MutBorrow.t t_SumSmaller10) (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:get_a_mut 'self' type invariant] inv_refmut_SumSmaller10 self}
+    any
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:get_a_mut ensures] ([@stop_split] [@expl:get_a_mut result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #0] guard_refmut_u32 result
+        = (fun (a'0: UInt32.t) -> UInt32.t'int a'0 + UInt32.t'int self.current.b <= 10))
+      /\ ([@stop_split] [@expl:get_a_mut ensures #1] result.inner.current = self.current.a)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #2] self.final.b = self.current.b)
+      /\ ([@stop_split] [@expl:get_a_mut ensures #3] self.final.a = result.inner.final)}
+      (! return {result}) ]
+  
+  let new_u32 (borrow: MutBorrow.t UInt32.t) (guard: Map.map UInt32.t bool)
+    (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:new requires] guards_ref_Mapping_u32_bool guard borrow.current}
+    any
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:new_u32 ensures] ([@stop_split] [@expl:new result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:new ensures #0] result.inner = borrow)
+      /\ ([@stop_split] [@expl:new ensures #1] guard_refmut_u32 result = guard)
+      /\ ([@stop_split] [@expl:new ensures #2] guards_ref_Mapping_u32_bool guard borrow.final)}
+      (! return {result}) ]
+  
+  predicate resolve_refmut_u32 [@inline:trivial] (_1: MutBorrow.t UInt32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_u32
+  
+  predicate resolve_Guarded_refmut_u32_Mapping_u32_bool (_1: t_Guarded_refmut_u32_Mapping_u32_bool)
+  
+  axiom resolve_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_u32_Mapping_u32_bool [resolve_Guarded_refmut_u32_Mapping_u32_bool _1]. resolve_Guarded_refmut_u32_Mapping_u32_bool _1
+      = resolve_refmut_u32 _1.inner
+  
+  predicate resolve_refmut_SumSmaller10 [@inline:trivial] (_1: MutBorrow.t t_SumSmaller10) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_SumSmaller10
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let get_a_mut_5 (self: MutBorrow.t t_SumSmaller10) (return (x: t_Guarded_refmut_u32_Mapping_u32_bool)) =
+  {[@stop_split] [@expl:get_a_mut_5 requires] ([@stop_split] [@expl:get_a_mut_5 'self' type invariant] inv_refmut_SumSmaller10 self)
+    /\ ([@stop_split] [@expl:get_a_mut_5 requires] UInt32.t'int self.current.a + UInt32.t'int self.current.b <= 5)}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = [ &g <- fun (a'1: UInt32.t) -> UInt32.t'int a'1 + UInt32.t'int self.current.b <= 5 ] s1
+      | s1 = MutBorrow.borrow_final <t_SumSmaller10> {self.current} {MutBorrow.get_id self}
+          (fun (_bor: MutBorrow.t t_SumSmaller10) ->
+            [ &_17 <- _bor ] -{inv_SumSmaller10 _bor.final}-
+            [ &self <- { self with current = _bor.final } ] s2)
+        [ _ck -> (! {[@expl:type invariant] inv_SumSmaller10 self.current} any) ]
+      | s2 = get_a_mut {_17} (fun (_x: t_Guarded_refmut_u32_Mapping_u32_bool) -> [ &a'0 <- _x ] s3)
+      | s3 = MutBorrow.borrow_final <UInt32.t> {a'0.inner.current} {MutBorrow.get_id a'0.inner}
+          (fun (_bor: MutBorrow.t UInt32.t) ->
+            [ &_19 <- _bor ] [ &a'0 <- { a'0 with inner = { a'0.inner with current = _bor.final } } ] s4)
+      | s4 = MutBorrow.borrow_final <UInt32.t> {_19.current} {MutBorrow.get_id _19}
+          (fun (_bor: MutBorrow.t UInt32.t) -> [ &_18 <- _bor ] [ &_19 <- { _19 with current = _bor.final } ] s5)
+      | s5 = new_u32 {_18} {g} (fun (_x: t_Guarded_refmut_u32_Mapping_u32_bool) -> [ &_ret <- _x ] s6)
+      | s6 = -{resolve_refmut_u32 _19}- s7
+      | s7 = s8 [ _ck -> (! {[@expl:type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool a'0} any) ]
+      | s8 = -{resolve_Guarded_refmut_u32_Mapping_u32_bool a'0}- s9
+      | s9 = s10 [ _ck -> (! {[@expl:type invariant] inv_refmut_SumSmaller10 self} any) ]
+      | s10 = -{resolve_refmut_SumSmaller10 self}- s11
+      | s11 = return {_ret} ] ]
+    [ & _ret: t_Guarded_refmut_u32_Mapping_u32_bool = Any.any_l ()
+    | & self: MutBorrow.t t_SumSmaller10 = self
+    | & g: Map.map UInt32.t bool = Any.any_l ()
+    | & a'0: t_Guarded_refmut_u32_Mapping_u32_bool = Any.any_l ()
+    | & _17: MutBorrow.t t_SumSmaller10 = Any.any_l ()
+    | & _18: MutBorrow.t UInt32.t = Any.any_l ()
+    | & _19: MutBorrow.t UInt32.t = Any.any_l () ])
+    [ return (result: t_Guarded_refmut_u32_Mapping_u32_bool) ->
+    {[@stop_split] [@expl:get_a_mut_5 ensures] ([@stop_split] [@expl:get_a_mut_5 result type invariant] inv_Guarded_refmut_u32_Mapping_u32_bool result)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #0] guard_refmut_u32 result
+        = (fun (a'0: UInt32.t) -> UInt32.t'int a'0 + UInt32.t'int self.current.b <= 5))
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #1] result.inner.current = self.current.a)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #2] self.final.b = self.current.b)
+      /\ ([@stop_split] [@expl:get_a_mut_5 ensures #3] self.final.a = result.inner.final)}
+      (! return {result}) ]
+end
+module M_takes_guarded
+  use creusot.prelude.MutBorrow
+  use creusot.int.Int32
+  use map.Map
+  use creusot.prelude.Any
+  
+  type t_Guarded_refmut_i32_Mapping_i32_bool = {
+    inner: MutBorrow.t Int32.t;
+    _guard: Map.map Int32.t bool;
+    _initial: MutBorrow.t Int32.t }
+  
+  predicate index_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (a: Int32.t) = Map.get self a
+  
+  meta "rewrite_def" predicate index_Mapping_i32_bool
+  
+  predicate guards_ref_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (x: Int32.t) =
+    index_Mapping_i32_bool self x
+  
+  meta "rewrite_def" predicate guards_ref_Mapping_i32_bool
+  
+  predicate guards_Mapping_i32_bool [@inline:trivial] (self: Map.map Int32.t bool) (initial: MutBorrow.t Int32.t) (current': MutBorrow.t Int32.t) =
+    guards_ref_Mapping_i32_bool self current'.current /\ initial.final = current'.final
+  
+  meta "rewrite_def" predicate guards_Mapping_i32_bool
+  
+  predicate invariant_Guarded_refmut_i32_Mapping_i32_bool [@inline:trivial] (self: t_Guarded_refmut_i32_Mapping_i32_bool) =
+    guards_Mapping_i32_bool self._guard self._initial self.inner
+  
+  meta "rewrite_def" predicate invariant_Guarded_refmut_i32_Mapping_i32_bool
+  
+  predicate inv_Guarded_refmut_i32_Mapping_i32_bool (_1: t_Guarded_refmut_i32_Mapping_i32_bool)
+  
+  axiom inv_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_i32_Mapping_i32_bool [inv_Guarded_refmut_i32_Mapping_i32_bool _1]. inv_Guarded_refmut_i32_Mapping_i32_bool _1
+      = invariant_Guarded_refmut_i32_Mapping_i32_bool _1
+  
+  predicate resolve_refmut_i32 [@inline:trivial] (_1: MutBorrow.t Int32.t) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_i32
+  
+  predicate resolve_Guarded_refmut_i32_Mapping_i32_bool (_1: t_Guarded_refmut_i32_Mapping_i32_bool)
+  
+  axiom resolve_axiom [@rewrite]:
+    forall _1: t_Guarded_refmut_i32_Mapping_i32_bool [resolve_Guarded_refmut_i32_Mapping_i32_bool _1]. resolve_Guarded_refmut_i32_Mapping_i32_bool _1
+      = resolve_refmut_i32 _1.inner
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let takes_guarded (_guarded: t_Guarded_refmut_i32_Mapping_i32_bool) (return (x: ())) =
+  {[@stop_split] [@expl:takes_guarded '_guarded' type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool _guarded}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = s1 [ _ck -> (! {[@expl:type invariant] inv_Guarded_refmut_i32_Mapping_i32_bool _guarded} any) ]
+      | s1 = -{resolve_Guarded_refmut_i32_Mapping_i32_bool _guarded}- s2
+      | s2 = return {_ret} ] ]
+    [ & _ret: () = Any.any_l () | & _guarded: t_Guarded_refmut_i32_Mapping_i32_bool = _guarded ])
+    [ return (result: ()) -> (! return {result}) ]
+end

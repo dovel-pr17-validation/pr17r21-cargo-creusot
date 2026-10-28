@@ -1,0 +1,1721 @@
+module M_common__trait_ExactSizeIterator__is_empty
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_Self
+  
+  predicate inv_Self (_1: t_Self)
+  
+  predicate invariant_ref_Self [@inline:trivial] (self: t_Self) = inv_Self self
+  
+  meta "rewrite_def" predicate invariant_ref_Self
+  
+  predicate inv_ref_Self [@inline:trivial] (_1: t_Self) = invariant_ref_Self _1
+  
+  meta "rewrite_def" predicate inv_ref_Self
+  
+  predicate precondition_len (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef: forall args: t_Self [precondition_len () args]. (let self = args in inv_ref_Self self)
+      -> precondition_len () args
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_Self (self: t_Self) (visited: Seq.seq t_Item) (o: t_Self)
+  
+  function produces_trans_Self (a: t_Self) (ab: Seq.seq t_Item) (b: t_Self) (bc: Seq.seq t_Item) (c: t_Self) : ()
+  
+  axiom produces_trans_Self_spec:
+    forall a: t_Self, ab: Seq.seq t_Item, b: t_Self, bc: Seq.seq t_Item, c: t_Self. produces_Self a ab b
+      -> produces_Self b bc c -> produces_Self a (Seq.(++) ab bc) c
+  
+  function produces_refl_Self (self: t_Self) : ()
+  
+  axiom produces_refl_Self_spec: forall self: t_Self. produces_Self self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_Self (self: MutBorrow.t t_Self)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_Self, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_Self. produces_Self self s i.current
+            /\ completed_Self i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_Self. produces_Self self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate precondition_size_hint (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef'0:
+    forall args: t_Self [precondition_size_hint () args]. (let self = args in inv_ref_Self self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_Self (self: t_Self) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  predicate postcondition_len (self: ()) (args: t_Self) (result: UInt64.t)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_Self, result: UInt64.t [postcondition_len () args result]. postcondition_len () args result
+      -> (let self = args in postcondition_size_hint () self { f0 = result; f1 = Some result })
+  
+  predicate postcondition_once_len (self: ()) (args: t_Self) (result: UInt64.t) = postcondition_len self args result
+  
+  meta "rewrite_def" predicate postcondition_once_len
+  
+  let len_Self (self: t_Self) (return (x: UInt64.t)) = {[@stop_split] [@expl:len requires] precondition_len () self}
+    any
+    [ return (result: UInt64.t) -> {[@stop_split] [@expl:len ensures] postcondition_once_len () self result}
+      (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let is_empty_Self (self: t_Self) (return (x: bool)) =
+  {[@stop_split] [@expl:is_empty 'self' type invariant] inv_ref_Self self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = len_Self {self} (fun (_x: UInt64.t) -> [ &_4 <- _x ] s1)
+      | s1 = [ &_ret <- _4 = (0: UInt64.t) ] s2
+      | s2 = return {_ret} ] ] [ & _ret: bool = Any.any_l () | & self: t_Self = self | & _4: UInt64.t = Any.any_l () ])
+    [ return (result: bool) ->
+    {[@stop_split] [@expl:is_empty ensures] exists l: UInt64.t. postcondition_size_hint () self { f0 = l; f1 = Some l }
+        /\ result = (l = (0: UInt64.t))}
+      (! return {result}) ]
+end
+module M_common__trait_ExactSizeIterator__len
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_Self
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_Self (self: t_Self) (visited: Seq.seq t_Item) (o: t_Self)
+  
+  function produces_trans_Self (a: t_Self) (ab: Seq.seq t_Item) (b: t_Self) (bc: Seq.seq t_Item) (c: t_Self) : ()
+  
+  axiom produces_trans_Self_spec:
+    forall a: t_Self, ab: Seq.seq t_Item, b: t_Self, bc: Seq.seq t_Item, c: t_Self. produces_Self a ab b
+      -> produces_Self b bc c -> produces_Self a (Seq.(++) ab bc) c
+  
+  function produces_refl_Self (self: t_Self) : ()
+  
+  axiom produces_refl_Self_spec: forall self: t_Self. produces_Self self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_Self (self: MutBorrow.t t_Self)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_Self, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_Self. produces_Self self s i.current
+            /\ completed_Self i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_Self. produces_Self self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate inv_Self (_1: t_Self)
+  
+  predicate invariant_ref_Self [@inline:trivial] (self: t_Self) = inv_Self self
+  
+  meta "rewrite_def" predicate invariant_ref_Self
+  
+  predicate inv_ref_Self [@inline:trivial] (_1: t_Self) = invariant_ref_Self _1
+  
+  meta "rewrite_def" predicate inv_ref_Self
+  
+  predicate precondition_size_hint (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef: forall args: t_Self [precondition_size_hint () args]. (let self = args in inv_ref_Self self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_Self (self: t_Self) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  function size_hint_exact_Self (self: t_Self) (r: tup2_usize_Option_usize) : ()
+  
+  axiom size_hint_exact_Self_spec: forall self: t_Self, r: tup2_usize_Option_usize. postcondition_size_hint () self r
+      -> r.f1 = Some (r.f0)
+  
+  type tup2_ref_Option_usize_ref_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  type t_Option_Int = None'0 | Some'0 int
+  
+  function deep_model_usize [@inline:trivial] (self: UInt64.t) : int = UInt64.t'int self
+  
+  meta "rewrite_def" function deep_model_usize
+  
+  function deep_model_Option_usize [@inline:trivial] (self: t_Option_usize) : t_Option_Int = match self with
+      | Some t -> Some'0 (deep_model_usize t)
+      | None -> None'0
+      end
+  
+  meta "rewrite_def" function deep_model_Option_usize
+  
+  function deep_model_ref_Option_usize [@inline:trivial] (self: t_Option_usize) : t_Option_Int =
+    deep_model_Option_usize self
+  
+  meta "rewrite_def" function deep_model_ref_Option_usize
+  
+  let eq_Option_usize (self: t_Option_usize) (other: t_Option_usize) (return (x: bool)) = any
+    [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] result
+      = (deep_model_ref_Option_usize self = deep_model_ref_Option_usize other)}
+      (! return {result}) ]
+  
+  type t_AssertKind = Eq | Ne | Match
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let len_Self (self: t_Self) (return (x: UInt64.t)) =
+  {[@stop_split] [@expl:len 'self' type invariant] inv_ref_Self self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = [ &_4 <- () ] s1
+      | s1 = size_hint_Self {self} (fun (_x: tup2_usize_Option_usize) -> [ &_8 <- _x ] s2)
+      | s2 = [ &lower <- _8.f0 ] s3
+      | s3 = [ &upper <- _8.f1 ] s4
+      | s4 = [ &_14 <- Some lower ] s5
+      | s5 = [ &_11 <- { f0'0 = upper; f1'0 = _14 } ] s6
+      | s6 = [ &left_val <- _11.f0'0 ] s7
+      | s7 = [ &right_val <- _11.f1'0 ] s8
+      | s8 = eq_Option_usize {left_val} {right_val} (fun (_x: bool) -> [ &_18 <- _x ] s9)
+      | s9 = any [ br0 -> {_18 = false} (! bb5) | br1 -> {_18} (! bb4) ] ]
+    | bb4 = s0 [ s0 = [ &_ret <- lower ] s1 | s1 = return {_ret} ]
+    | bb5 = s0
+      [ s0 = [ &kind <- Eq ] s1 | s1 = [ &_26 <- left_val ] s2 | s2 = [ &_28 <- right_val ] s3 | s3 = {false} any ] ]
+    [ & _ret: UInt64.t = Any.any_l ()
+    | & self: t_Self = self
+    | & _4: () = Any.any_l ()
+    | & lower: UInt64.t = Any.any_l ()
+    | & upper: t_Option_usize = Any.any_l ()
+    | & _8: tup2_usize_Option_usize = Any.any_l ()
+    | & _11: tup2_ref_Option_usize_ref_Option_usize = Any.any_l ()
+    | & _14: t_Option_usize = Any.any_l ()
+    | & left_val: t_Option_usize = Any.any_l ()
+    | & right_val: t_Option_usize = Any.any_l ()
+    | & _18: bool = Any.any_l ()
+    | & kind: t_AssertKind = Any.any_l ()
+    | & _26: t_Option_usize = Any.any_l ()
+    | & _28: t_Option_usize = Any.any_l () ])
+    [ return (result: UInt64.t) -> {[@stop_split] [@expl:len ensures] postcondition_size_hint () self { f0 = result;
+                                                                                                        f1 = Some result }}
+      (! return {result}) ]
+end
+module M_impl_ExactSizeIterator_for_Zip_A_B__size_hint_exact (* <Zip<A, B> as common::ExactSizeIterator> *)
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_A. produces_A self s i.current /\ completed_A i
+          -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_A. produces_A self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate postcondition_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_B, result: tup2_usize_Option_usize [postcondition_size_hint'0 () args result]. postcondition_size_hint'0 () args result
+      -> (let self = args in (forall s: Seq.seq t_Item'0, i: MutBorrow.t t_B. produces_B self s i.current
+            /\ completed_B i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item'0, i: t_B. produces_B self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = other <= self
+  
+  meta "rewrite_def" predicate ge_log_Int
+  
+  type tup2_Option_usize_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  predicate postcondition_size_hint'1 (self: ()) (args: t_Zip_A_B) (result: tup2_usize_Option_usize) =
+    let self'0 = args in exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self'0.a ra
+      /\ postcondition_size_hint'0 () self'0.b rb
+      /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+      /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+      /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+        | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+        /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+        | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+        | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+        | {f0'0 = None; f1'0 = None} -> result.f1 = None
+        end
+  
+  meta "rewrite_def" predicate postcondition_size_hint'1
+  
+  type tup2_Item_Item = { f0'1: t_Item; f1'1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0'1 = Seq.get p1 i; f1'1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  function produces_trans_Zip_A_B (a'0: t_Zip_A_B) (ab: Seq.seq tup2_Item_Item) (b'0: t_Zip_A_B) (bc: Seq.seq tup2_Item_Item) (c: t_Zip_A_B) : ()
+   = ()
+  
+  axiom produces_trans_Zip_A_B_spec:
+    forall a'0: t_Zip_A_B, ab: Seq.seq tup2_Item_Item, b'0: t_Zip_A_B, bc: Seq.seq tup2_Item_Item, c: t_Zip_A_B. produces_Zip_A_B a'0 ab b'0
+      -> produces_Zip_A_B b'0 bc c -> produces_Zip_A_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_Zip_A_B (self: t_Zip_A_B) : () = ()
+  
+  axiom produces_refl_Zip_A_B_spec:
+    forall self: t_Zip_A_B. produces_Zip_A_B self (Seq.empty: Seq.seq tup2_Item_Item) self
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_ref_Zip_A_B [@inline:trivial] (self: t_Zip_A_B) = inv_Zip_A_B self
+  
+  meta "rewrite_def" predicate invariant_ref_Zip_A_B
+  
+  predicate inv_ref_Zip_A_B [@inline:trivial] (_1: t_Zip_A_B) = invariant_ref_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_ref_Zip_A_B
+  
+  predicate invariant_ref_A [@inline:trivial] (self: t_A) = inv_A self
+  
+  meta "rewrite_def" predicate invariant_ref_A
+  
+  predicate inv_ref_A [@inline:trivial] (_1: t_A) = invariant_ref_A _1
+  
+  meta "rewrite_def" predicate inv_ref_A
+  
+  predicate precondition_size_hint (self: ()) (args: t_A)
+  
+  axiom precondition_fndef: forall args: t_A [precondition_size_hint () args]. (let self = args in inv_ref_A self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_A (self: t_A) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  predicate invariant_ref_B [@inline:trivial] (self: t_B) = inv_B self
+  
+  meta "rewrite_def" predicate invariant_ref_B
+  
+  predicate inv_ref_B [@inline:trivial] (_1: t_B) = invariant_ref_B _1
+  
+  meta "rewrite_def" predicate inv_ref_B
+  
+  predicate precondition_size_hint'0 (self: ()) (args: t_B)
+  
+  axiom precondition_fndef'0: forall args: t_B [precondition_size_hint'0 () args]. (let self = args in inv_ref_B self)
+      -> precondition_size_hint'0 () args
+  
+  predicate postcondition_once_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint'0 self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint'0
+  
+  let size_hint_B (self: t_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint'0 () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint'0 () self result}
+      (! return {result}) ]
+  
+  let size_hint_Zip_A_B (self: t_Zip_A_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint 'self' type invariant] inv_ref_Zip_A_B self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self.a ra
+        /\ postcondition_size_hint'0 () self.b rb
+        /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+        /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+        /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+          | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+          /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+          | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+          | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+          | {f0'0 = None; f1'0 = None} -> result.f1 = None
+          end}
+      (! return {result}) ]
+  
+  function size_hint_exact_A (self: t_A) (r: tup2_usize_Option_usize) : ()
+  
+  axiom size_hint_exact_A_spec: forall self: t_A, r: tup2_usize_Option_usize. postcondition_size_hint () self r
+      -> r.f1 = Some (r.f0)
+  
+  function size_hint_exact_B (self: t_B) (r: tup2_usize_Option_usize) : ()
+  
+  axiom size_hint_exact_B_spec: forall self: t_B, r: tup2_usize_Option_usize. postcondition_size_hint'0 () self r
+      -> r.f1 = Some (r.f0)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant self : t_Zip_A_B
+  
+  constant r : tup2_usize_Option_usize
+  
+  function size_hint_exact_Zip_A_B (self: t_Zip_A_B) (r: tup2_usize_Option_usize) : ()
+  
+  goal vc_size_hint_exact_Zip_A_B: postcondition_size_hint'1 () self r
+    -> ([@stop_split] [@expl:size_hint_exact ensures] r.f1 = Some (r.f0))
+end
+module M_impl_ExactSizeIterator_for_Zip_A_B__size_hint_exact__refines (* <Zip<A, B> as common::ExactSizeIterator> *)
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_A. produces_A self s i.current /\ completed_A i
+          -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_A. produces_A self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate postcondition_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_B, result: tup2_usize_Option_usize [postcondition_size_hint'0 () args result]. postcondition_size_hint'0 () args result
+      -> (let self = args in (forall s: Seq.seq t_Item'0, i: MutBorrow.t t_B. produces_B self s i.current
+            /\ completed_B i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item'0, i: t_B. produces_B self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = other <= self
+  
+  meta "rewrite_def" predicate ge_log_Int
+  
+  type tup2_Option_usize_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  predicate postcondition_size_hint'1 (self: ()) (args: t_Zip_A_B) (result: tup2_usize_Option_usize) =
+    let self'0 = args in exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self'0.a ra
+      /\ postcondition_size_hint'0 () self'0.b rb
+      /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+      /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+      /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+        | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+        /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+        | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+        | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+        | {f0'0 = None; f1'0 = None} -> result.f1 = None
+        end
+  
+  meta "rewrite_def" predicate postcondition_size_hint'1
+  
+  type tup2_Item_Item = { f0'1: t_Item; f1'1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0'1 = Seq.get p1 i; f1'1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  function produces_trans_Zip_A_B (a'0: t_Zip_A_B) (ab: Seq.seq tup2_Item_Item) (b'0: t_Zip_A_B) (bc: Seq.seq tup2_Item_Item) (c: t_Zip_A_B) : ()
+   = ()
+  
+  axiom produces_trans_Zip_A_B_spec:
+    forall a'0: t_Zip_A_B, ab: Seq.seq tup2_Item_Item, b'0: t_Zip_A_B, bc: Seq.seq tup2_Item_Item, c: t_Zip_A_B. produces_Zip_A_B a'0 ab b'0
+      -> produces_Zip_A_B b'0 bc c -> produces_Zip_A_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_Zip_A_B (self: t_Zip_A_B) : () = ()
+  
+  axiom produces_refl_Zip_A_B_spec:
+    forall self: t_Zip_A_B. produces_Zip_A_B self (Seq.empty: Seq.seq tup2_Item_Item) self
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_ref_Zip_A_B [@inline:trivial] (self: t_Zip_A_B) = inv_Zip_A_B self
+  
+  meta "rewrite_def" predicate invariant_ref_Zip_A_B
+  
+  predicate inv_ref_Zip_A_B [@inline:trivial] (_1: t_Zip_A_B) = invariant_ref_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_ref_Zip_A_B
+  
+  predicate invariant_ref_A [@inline:trivial] (self: t_A) = inv_A self
+  
+  meta "rewrite_def" predicate invariant_ref_A
+  
+  predicate inv_ref_A [@inline:trivial] (_1: t_A) = invariant_ref_A _1
+  
+  meta "rewrite_def" predicate inv_ref_A
+  
+  predicate precondition_size_hint (self: ()) (args: t_A)
+  
+  axiom precondition_fndef: forall args: t_A [precondition_size_hint () args]. (let self = args in inv_ref_A self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_A (self: t_A) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  predicate invariant_ref_B [@inline:trivial] (self: t_B) = inv_B self
+  
+  meta "rewrite_def" predicate invariant_ref_B
+  
+  predicate inv_ref_B [@inline:trivial] (_1: t_B) = invariant_ref_B _1
+  
+  meta "rewrite_def" predicate inv_ref_B
+  
+  predicate precondition_size_hint'0 (self: ()) (args: t_B)
+  
+  axiom precondition_fndef'0: forall args: t_B [precondition_size_hint'0 () args]. (let self = args in inv_ref_B self)
+      -> precondition_size_hint'0 () args
+  
+  predicate postcondition_once_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint'0 self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint'0
+  
+  let size_hint_B (self: t_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint'0 () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint'0 () self result}
+      (! return {result}) ]
+  
+  let size_hint_Zip_A_B (self: t_Zip_A_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint 'self' type invariant] inv_ref_Zip_A_B self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self.a ra
+        /\ postcondition_size_hint'0 () self.b rb
+        /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+        /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+        /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+          | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+          /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+          | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+          | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+          | {f0'0 = None; f1'0 = None} -> result.f1 = None
+          end}
+      (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: t_Zip_A_B, r: tup2_usize_Option_usize. postcondition_size_hint'1 () self r
+      -> postcondition_size_hint'1 () self r /\ (forall result: (). r.f1 = Some (r.f0) -> r.f1 = Some (r.f0))
+end
+module M_impl_Iterator_for_Zip_A_B__next (* <Zip<A, B> as common::Iterator> *)
+  use creusot.prelude.MutBorrow
+  use seq.Seq
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  predicate inv_A (_1: t_A)
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Option_Item = None | Some t_Item
+  
+  predicate invariant_refmut_A [@inline:trivial] (self: MutBorrow.t t_A) = inv_A self.current /\ inv_A self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_A
+  
+  predicate inv_refmut_A [@inline:trivial] (_1: MutBorrow.t t_A) = invariant_refmut_A _1
+  
+  meta "rewrite_def" predicate inv_refmut_A
+  
+  predicate precondition_next (self: ()) (args: MutBorrow.t t_A)
+  
+  axiom precondition_fndef:
+    forall args: MutBorrow.t t_A [precondition_next () args]. (let self = args in inv_refmut_A self)
+      -> precondition_next () args
+  
+  predicate inv_Item (_1: t_Item)
+  
+  predicate inv_Option_Item (_1: t_Option_Item)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Option_Item [inv_Option_Item _1]. inv_Option_Item _1
+      = match _1 with
+        | None -> true
+        | Some f0 -> inv_Item f0
+        end
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate postcondition_next (self: ()) (args: MutBorrow.t t_A) (result: t_Option_Item)
+  
+  axiom postcondition_fndef:
+    forall args: MutBorrow.t t_A, result: t_Option_Item [postcondition_next () args result]. postcondition_next () args result
+      -> (let self = args in inv_Option_Item result
+      /\ match result with
+        | None -> completed_A self
+        | Some v -> produces_A self.current (Seq.singleton v) self.final
+        end)
+  
+  predicate postcondition_once_next (self: ()) (args: MutBorrow.t t_A) (result: t_Option_Item) =
+    postcondition_next self args result
+  
+  meta "rewrite_def" predicate postcondition_once_next
+  
+  let next_A (self: MutBorrow.t t_A) (return (x: t_Option_Item)) =
+  {[@stop_split] [@expl:next requires] precondition_next () self}
+    any
+    [ return (result: t_Option_Item) -> {[@stop_split] [@expl:next ensures] postcondition_once_next () self result}
+      (! return {result}) ]
+  
+  let elim_Some (_x: t_Option_Item) (return (f0: t_Item)) = any
+    [ _k (f0: t_Item) -> {Some f0 = _x} (! return {f0})
+    | _chk -> (! {[@expl:elim Some] match _x with
+        | Some _ -> true
+        | _ -> false
+        end}
+      any) ]
+  
+  predicate inv_B (_1: t_B)
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type t_Option_Item'0 = None'0 | Some'0 t_Item'0
+  
+  predicate invariant_refmut_B [@inline:trivial] (self: MutBorrow.t t_B) = inv_B self.current /\ inv_B self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_B
+  
+  predicate inv_refmut_B [@inline:trivial] (_1: MutBorrow.t t_B) = invariant_refmut_B _1
+  
+  meta "rewrite_def" predicate inv_refmut_B
+  
+  predicate precondition_next'0 (self: ()) (args: MutBorrow.t t_B)
+  
+  axiom precondition_fndef'0:
+    forall args: MutBorrow.t t_B [precondition_next'0 () args]. (let self = args in inv_refmut_B self)
+      -> precondition_next'0 () args
+  
+  predicate inv_Item'0 (_1: t_Item'0)
+  
+  predicate inv_Option_Item'0 (_1: t_Option_Item'0)
+  
+  axiom inv_axiom'0 [@rewrite]: forall _1: t_Option_Item'0 [inv_Option_Item'0 _1]. inv_Option_Item'0 _1
+      = match _1 with
+        | None'0 -> true
+        | Some'0 f0 -> inv_Item'0 f0
+        end
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate postcondition_next'0 (self: ()) (args: MutBorrow.t t_B) (result: t_Option_Item'0)
+  
+  axiom postcondition_fndef'0:
+    forall args: MutBorrow.t t_B, result: t_Option_Item'0 [postcondition_next'0 () args result]. postcondition_next'0 () args result
+      -> (let self = args in inv_Option_Item'0 result
+      /\ match result with
+        | None'0 -> completed_B self
+        | Some'0 v -> produces_B self.current (Seq.singleton v) self.final
+        end)
+  
+  predicate postcondition_once_next'0 (self: ()) (args: MutBorrow.t t_B) (result: t_Option_Item'0) =
+    postcondition_next'0 self args result
+  
+  meta "rewrite_def" predicate postcondition_once_next'0
+  
+  let next_B (self: MutBorrow.t t_B) (return (x: t_Option_Item'0)) =
+  {[@stop_split] [@expl:next requires] precondition_next'0 () self}
+    any
+    [ return (result: t_Option_Item'0) -> {[@stop_split] [@expl:next ensures] postcondition_once_next'0 () self result}
+      (! return {result}) ]
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom'1 [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_refmut_Zip_A_B [@inline:trivial] (self: MutBorrow.t t_Zip_A_B) =
+    inv_Zip_A_B self.current /\ inv_Zip_A_B self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Zip_A_B
+  
+  predicate inv_refmut_Zip_A_B [@inline:trivial] (_1: MutBorrow.t t_Zip_A_B) = invariant_refmut_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_refmut_Zip_A_B
+  
+  predicate resolve_refmut_Zip_A_B [@inline:trivial] (_1: MutBorrow.t t_Zip_A_B) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_Zip_A_B
+  
+  let elim_Some'0 (_x: t_Option_Item'0) (return (f0: t_Item'0)) = any
+    [ _k (f0: t_Item'0) -> {Some'0 f0 = _x} (! return {f0})
+    | _chk -> (! {[@expl:elim Some] match _x with
+        | Some'0 _ -> true
+        | _ -> false
+        end}
+      any) ]
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  type t_Option_tup2_Item_Item = None'1 | Some'1 tup2_Item_Item
+  
+  predicate resolve_Item (_1: t_Item'0)
+  
+  predicate resolve_Option_Item (_1: t_Option_Item'0)
+  
+  axiom resolve_axiom [@rewrite]: forall _1: t_Option_Item'0 [resolve_Option_Item _1]. resolve_Option_Item _1
+      = match _1 with
+        | None'0 -> true
+        | Some'0 x0 -> resolve_Item x0
+        end
+  
+  predicate resolve_Item'0 (_1: t_Item)
+  
+  predicate resolve_Option_Item'0 (_1: t_Option_Item)
+  
+  axiom resolve_axiom'0 [@rewrite]: forall _1: t_Option_Item [resolve_Option_Item'0 _1]. resolve_Option_Item'0 _1
+      = match _1 with
+        | None -> true
+        | Some x0 -> resolve_Item'0 x0
+        end
+  
+  predicate inv_tup2_Item_Item [@inline:trivial] (_1: tup2_Item_Item) = inv_Item _1.f0 /\ inv_Item'0 _1.f1
+  
+  meta "rewrite_def" predicate inv_tup2_Item_Item
+  
+  predicate inv_Option_tup2_Item_Item (_1: t_Option_tup2_Item_Item)
+  
+  axiom inv_axiom'2 [@rewrite]:
+    forall _1: t_Option_tup2_Item_Item [inv_Option_tup2_Item_Item _1]. inv_Option_tup2_Item_Item _1
+      = match _1 with
+        | None'1 -> true
+        | Some'1 f0'0 -> inv_tup2_Item_Item f0'0
+        end
+  
+  predicate completed_Zip_A_B (self: MutBorrow.t t_Zip_A_B) =
+    completed_A (MutBorrow.borrow_logic self.current.a self.final.a (MutBorrow.inherit_id (MutBorrow.get_id self) 0))
+      /\ self.current.b = self.final.b
+    \/ (exists x: t_Item. produces_A self.current.a (Seq.singleton x) self.final.a
+      /\ resolve_Item'0 x
+      /\ completed_B (MutBorrow.borrow_logic self.current.b self.final.b (MutBorrow.inherit_id (MutBorrow.get_id self) 1)))
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let next_Zip_A_B (self: MutBorrow.t t_Zip_A_B) (return (x: t_Option_tup2_Item_Item)) =
+  {[@stop_split] [@expl:next 'self' type invariant] inv_refmut_Zip_A_B self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = MutBorrow.borrow_final <t_A> {self.current.a} {MutBorrow.inherit_id (MutBorrow.get_id self) 0}
+          (fun (_bor: MutBorrow.t t_A) ->
+            [ &_6 <- _bor ] -{inv_A _bor.final}-
+            [ &self <- { self with current = { self.current with a = _bor.final } } ] s1)
+        [ _ck -> (! {[@expl:type invariant] inv_A self.current.a} any) ]
+      | s1 = next_A {_6} (fun (_x: t_Option_Item) -> [ &_5 <- _x ] s2)
+      | s2 = any [ br0 -> {_5 = None} (! bb3) | br1 (x0: t_Item) -> {_5 = Some x0} (! bb4) ] ]
+    | bb4 = s0
+      [ s0 = elim_Some {_5} (fun (r0: t_Item) -> [ &x'0 <- r0 ] s1)
+      | s1 = [ &x <- x'0 ] s2
+      | s2 = MutBorrow.borrow_final <t_B> {self.current.b} {MutBorrow.inherit_id (MutBorrow.get_id self) 1}
+          (fun (_bor: MutBorrow.t t_B) ->
+            [ &_12 <- _bor ] -{inv_B _bor.final}-
+            [ &self <- { self with current = { self.current with b = _bor.final } } ] s3)
+        [ _ck -> (! {[@expl:type invariant] inv_B self.current.b} any) ]
+      | s3 = next_B {_12} (fun (_x: t_Option_Item'0) -> [ &_11 <- _x ] s4)
+      | s4 = s5 [ _ck -> (! {[@expl:type invariant] inv_refmut_Zip_A_B self} any) ]
+      | s5 = -{resolve_refmut_Zip_A_B self}- s6
+      | s6 = any [ br0 -> {_11 = None'0} (! bb10) | br1 (x0: t_Item'0) -> {_11 = Some'0 x0} (! bb11) ] ]
+    | bb11 = s0
+      [ s0 = elim_Some'0 {_11} (fun (r0: t_Item'0) -> [ &y'0 <- r0 ] s1)
+      | s1 = [ &y <- y'0 ] s2
+      | s2 = [ &_16 <- { f0 = x; f1 = y } ] s3
+      | s3 = [ &_ret <- Some'1 _16 ] s4
+      | s4 = return {_ret} ]
+    | bb10 = s0
+      [ s0 = s1 [ _ck -> (! {[@expl:type invariant] inv_Option_Item'0 _11} any) ]
+      | s1 = -{resolve_Option_Item _11}- s2
+      | s2 = s3 [ _ck -> (! {[@expl:type invariant] inv_Item x} any) ]
+      | s3 = -{resolve_Item'0 x}- s4
+      | s4 = [ &_ret <- None'1 ] s5
+      | s5 = return {_ret} ]
+    | bb3 = s0
+      [ s0 = s1 [ _ck -> (! {[@expl:type invariant] inv_Option_Item _5} any) ]
+      | s1 = -{resolve_Option_Item'0 _5}- s2
+      | s2 = s3 [ _ck -> (! {[@expl:type invariant] inv_refmut_Zip_A_B self} any) ]
+      | s3 = -{resolve_refmut_Zip_A_B self}- s4
+      | s4 = [ &_ret <- None'1 ] s5
+      | s5 = return {_ret} ] ]
+    [ & _ret: t_Option_tup2_Item_Item = Any.any_l ()
+    | & self: MutBorrow.t t_Zip_A_B = self
+    | & x: t_Item = Any.any_l ()
+    | & _5: t_Option_Item = Any.any_l ()
+    | & _6: MutBorrow.t t_A = Any.any_l ()
+    | & x'0: t_Item = Any.any_l ()
+    | & y: t_Item'0 = Any.any_l ()
+    | & _11: t_Option_Item'0 = Any.any_l ()
+    | & _12: MutBorrow.t t_B = Any.any_l ()
+    | & y'0: t_Item'0 = Any.any_l ()
+    | & _16: tup2_Item_Item = Any.any_l () ])
+    [ return (result: t_Option_tup2_Item_Item) ->
+    {[@stop_split] [@expl:next_Zip_A_B ensures] ([@stop_split] [@expl:next result type invariant] inv_Option_tup2_Item_Item result)
+      /\ ([@stop_split] [@expl:next ensures] match result with
+        | None'1 -> completed_Zip_A_B self
+        | Some'1 v -> produces_Zip_A_B self.current (Seq.singleton v) self.final
+        end)}
+      (! return {result}) ]
+end
+module M_impl_Iterator_for_Zip_A_B__next__refines (* <Zip<A, B> as common::Iterator> *)
+  use creusot.prelude.MutBorrow
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_refmut_Zip_A_B [@inline:trivial] (self: MutBorrow.t t_Zip_A_B) =
+    inv_Zip_A_B self.current /\ inv_Zip_A_B self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Zip_A_B
+  
+  predicate inv_refmut_Zip_A_B [@inline:trivial] (_1: MutBorrow.t t_Zip_A_B) = invariant_refmut_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_refmut_Zip_A_B
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  type t_Option_tup2_Item_Item = None | Some tup2_Item_Item
+  
+  predicate inv_Item (_1: t_Item)
+  
+  predicate inv_Item'0 (_1: t_Item'0)
+  
+  predicate inv_tup2_Item_Item [@inline:trivial] (_1: tup2_Item_Item) = inv_Item _1.f0 /\ inv_Item'0 _1.f1
+  
+  meta "rewrite_def" predicate inv_tup2_Item_Item
+  
+  predicate inv_Option_tup2_Item_Item (_1: t_Option_tup2_Item_Item)
+  
+  axiom inv_axiom'0 [@rewrite]:
+    forall _1: t_Option_tup2_Item_Item [inv_Option_tup2_Item_Item _1]. inv_Option_tup2_Item_Item _1
+      = match _1 with
+        | None -> true
+        | Some f0'0 -> inv_tup2_Item_Item f0'0
+        end
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate resolve_Item (_1: t_Item)
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate completed_Zip_A_B (self: MutBorrow.t t_Zip_A_B) =
+    completed_A (MutBorrow.borrow_logic self.current.a self.final.a (MutBorrow.inherit_id (MutBorrow.get_id self) 0))
+      /\ self.current.b = self.final.b
+    \/ (exists x: t_Item. produces_A self.current.a (Seq.singleton x) self.final.a
+      /\ resolve_Item x
+      /\ completed_B (MutBorrow.borrow_logic self.current.b self.final.b (MutBorrow.inherit_id (MutBorrow.get_id self) 1)))
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: MutBorrow.t t_Zip_A_B. inv_refmut_Zip_A_B self
+      -> inv_refmut_Zip_A_B self
+      /\ (forall result: t_Option_tup2_Item_Item. inv_Option_tup2_Item_Item result
+          /\ match result with
+            | None -> completed_Zip_A_B self
+            | Some v -> produces_Zip_A_B self.current (Seq.singleton v) self.final
+            end
+        -> inv_Option_tup2_Item_Item result
+        /\ match result with
+          | None -> completed_Zip_A_B self
+          | Some v -> produces_Zip_A_B self.current (Seq.singleton v) self.final
+          end)
+end
+module M_impl_Iterator_for_Zip_A_B__produces_refl (* <Zip<A, B> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant self : t_Zip_A_B
+  
+  function produces_refl_Zip_A_B (self: t_Zip_A_B) : ()
+  
+  goal vc_produces_refl_Zip_A_B:
+    [@stop_split] [@expl:produces_refl ensures] produces_Zip_A_B self (Seq.empty: Seq.seq tup2_Item_Item) self
+end
+module M_impl_Iterator_for_Zip_A_B__produces_refl__refines (* <Zip<A, B> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines:
+    forall self: t_Zip_A_B. forall result: (). produces_Zip_A_B self (Seq.empty: Seq.seq tup2_Item_Item) self
+        -> produces_Zip_A_B self (Seq.empty: Seq.seq tup2_Item_Item) self
+end
+module M_impl_Iterator_for_Zip_A_B__produces_trans (* <Zip<A, B> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant a'0 : t_Zip_A_B
+  
+  constant ab : Seq.seq tup2_Item_Item
+  
+  constant b'0 : t_Zip_A_B
+  
+  constant bc : Seq.seq tup2_Item_Item
+  
+  constant c : t_Zip_A_B
+  
+  function produces_trans_Zip_A_B (a'0: t_Zip_A_B) (ab: Seq.seq tup2_Item_Item) (b'0: t_Zip_A_B) (bc: Seq.seq tup2_Item_Item) (c: t_Zip_A_B) : ()
+  
+  goal vc_produces_trans_Zip_A_B: produces_Zip_A_B a'0 ab b'0
+    -> produces_Zip_A_B b'0 bc c
+    -> ([@stop_split] [@expl:produces_trans ensures] produces_Zip_A_B a'0 (Seq.(++) ab bc) c)
+end
+module M_impl_Iterator_for_Zip_A_B__produces_trans__refines (* <Zip<A, B> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  type tup2_Item_Item = { f0: t_Item; f1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0 = Seq.get p1 i; f1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines:
+    forall a'0: t_Zip_A_B, ab: Seq.seq tup2_Item_Item, b'0: t_Zip_A_B, bc: Seq.seq tup2_Item_Item, c: t_Zip_A_B. produces_Zip_A_B a'0 ab b'0
+      -> produces_Zip_A_B b'0 bc c
+      -> produces_Zip_A_B a'0 ab b'0
+      /\ produces_Zip_A_B b'0 bc c
+      /\ (forall result: (). produces_Zip_A_B a'0 (Seq.(++) ab bc) c -> produces_Zip_A_B a'0 (Seq.(++) ab bc) c)
+end
+module M_impl_Iterator_for_Zip_A_B__size_hint (* <Zip<A, B> as common::Iterator> *)
+  use seq.Seq
+  use creusot.int.UInt64
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate invariant_ref_A [@inline:trivial] (self: t_A) = inv_A self
+  
+  meta "rewrite_def" predicate invariant_ref_A
+  
+  predicate inv_ref_A [@inline:trivial] (_1: t_A) = invariant_ref_A _1
+  
+  meta "rewrite_def" predicate inv_ref_A
+  
+  predicate precondition_size_hint (self: ()) (args: t_A)
+  
+  axiom precondition_fndef: forall args: t_A [precondition_size_hint () args]. (let self = args in inv_ref_A self)
+      -> precondition_size_hint () args
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_A. produces_A self s i.current /\ completed_A i
+          -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_A. produces_A self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_A (self: t_A) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate invariant_ref_B [@inline:trivial] (self: t_B) = inv_B self
+  
+  meta "rewrite_def" predicate invariant_ref_B
+  
+  predicate inv_ref_B [@inline:trivial] (_1: t_B) = invariant_ref_B _1
+  
+  meta "rewrite_def" predicate inv_ref_B
+  
+  predicate precondition_size_hint'0 (self: ()) (args: t_B)
+  
+  axiom precondition_fndef'0: forall args: t_B [precondition_size_hint'0 () args]. (let self = args in inv_ref_B self)
+      -> precondition_size_hint'0 () args
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate postcondition_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_B, result: tup2_usize_Option_usize [postcondition_size_hint'0 () args result]. postcondition_size_hint'0 () args result
+      -> (let self = args in (forall s: Seq.seq t_Item'0, i: MutBorrow.t t_B. produces_B self s i.current
+            /\ completed_B i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item'0, i: t_B. produces_B self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate postcondition_once_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint'0 self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint'0
+  
+  let size_hint_B (self: t_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint'0 () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint'0 () self result}
+      (! return {result}) ]
+  
+  function deep_model_usize [@inline:trivial] (self: UInt64.t) : int = UInt64.t'int self
+  
+  meta "rewrite_def" function deep_model_usize
+  
+  let min_usize (v1: UInt64.t) (v2: UInt64.t) (return (x: UInt64.t)) = any
+    [ return (result: UInt64.t) ->
+    {[@stop_split] [@expl:min_usize ensures] ([@stop_split] [@expl:min ensures #0] deep_model_usize result
+        <= deep_model_usize v1)
+      /\ ([@stop_split] [@expl:min ensures #1] deep_model_usize result <= deep_model_usize v2)
+      /\ ([@stop_split] [@expl:min ensures #2] result = v1 \/ result = v2)
+      /\ ([@stop_split] [@expl:min ensures #3] deep_model_usize v1 < deep_model_usize v2 -> result = v1)
+      /\ ([@stop_split] [@expl:min ensures #4] deep_model_usize v2 <= deep_model_usize v1 -> result = v2)}
+      (! return {result}) ]
+  
+  type tup2_Option_usize_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  let elim_Some (_x: t_Option_usize) (return (f0'1: UInt64.t)) = any
+    [ _k (f0'1: UInt64.t) -> {Some f0'1 = _x} (! return {f0'1})
+    | _chk -> (! {[@expl:elim Some] match _x with
+        | Some _ -> true
+        | _ -> false
+        end}
+      any) ]
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_ref_Zip_A_B [@inline:trivial] (self: t_Zip_A_B) = inv_Zip_A_B self
+  
+  meta "rewrite_def" predicate invariant_ref_Zip_A_B
+  
+  predicate inv_ref_Zip_A_B [@inline:trivial] (_1: t_Zip_A_B) = invariant_ref_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_ref_Zip_A_B
+  
+  predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = other <= self
+  
+  meta "rewrite_def" predicate ge_log_Int
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let size_hint_Zip_A_B (self: t_Zip_A_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint 'self' type invariant] inv_ref_Zip_A_B self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = size_hint_A {self.a} (fun (_x: tup2_usize_Option_usize) -> [ &_6 <- _x ] s1)
+      | s1 = [ &a_lower <- _6.f0 ] s2
+      | s2 = [ &a_upper <- _6.f1 ] s3
+      | s3 = size_hint_B {self.b} (fun (_x: tup2_usize_Option_usize) -> [ &_10 <- _x ] s4)
+      | s4 = [ &b_lower <- _10.f0 ] s5
+      | s5 = [ &b_upper <- _10.f1 ] s6
+      | s6 = min_usize {a_lower} {b_lower} (fun (_x: UInt64.t) -> [ &lower <- _x ] s7)
+      | s7 = [ &_16 <- { f0'0 = a_upper; f1'0 = b_upper } ] s8
+      | s8 = any [ br0 -> {_16.f0'0 = None} (! bb8) | br1 (x0: UInt64.t) -> {_16.f0'0 = Some x0} (! bb5) ] ]
+    | bb5 = any [ br0 -> {_16.f1'0 = None} (! bb12) | br1 (x0: UInt64.t) -> {_16.f1'0 = Some x0} (! bb13) ]
+    | bb13 = s0
+      [ s0 = elim_Some {_16.f0'0} (fun (r0: UInt64.t) -> [ &x <- r0 ] s1)
+      | s1 = elim_Some {_16.f1'0} (fun (r0: UInt64.t) -> [ &y <- r0 ] s2)
+      | s2 = min_usize {x} {y} (fun (_x: UInt64.t) -> [ &_24 <- _x ] s3)
+      | s3 = [ &upper <- Some _24 ] s4
+      | s4 = bb15 ]
+    | bb12 = s0
+      [ s0 = elim_Some {_16.f0'0} (fun (r0: UInt64.t) -> [ &x'0 <- r0 ] s1)
+      | s1 = [ &upper <- Some x'0 ] s2
+      | s2 = bb15 ]
+    | bb8 = any [ br0 -> {_16.f1'0 = None} (! bb10) | br1 (x0: UInt64.t) -> {_16.f1'0 = Some x0} (! bb11) ]
+    | bb11 = s0
+      [ s0 = elim_Some {_16.f1'0} (fun (r0: UInt64.t) -> [ &y'0 <- r0 ] s1)
+      | s1 = [ &upper <- Some y'0 ] s2
+      | s2 = bb15 ]
+    | bb10 = s0 [ s0 = [ &upper <- None ] s1 | s1 = bb15 ]
+    | bb15 = s0 [ s0 = [ &_ret <- { f0 = lower; f1 = upper } ] s1 | s1 = return {_ret} ] ]
+    [ & _ret: tup2_usize_Option_usize = Any.any_l ()
+    | & self: t_Zip_A_B = self
+    | & a_lower: UInt64.t = Any.any_l ()
+    | & a_upper: t_Option_usize = Any.any_l ()
+    | & _6: tup2_usize_Option_usize = Any.any_l ()
+    | & b_lower: UInt64.t = Any.any_l ()
+    | & b_upper: t_Option_usize = Any.any_l ()
+    | & _10: tup2_usize_Option_usize = Any.any_l ()
+    | & lower: UInt64.t = Any.any_l ()
+    | & upper: t_Option_usize = Any.any_l ()
+    | & _16: tup2_Option_usize_Option_usize = Any.any_l ()
+    | & x: UInt64.t = Any.any_l ()
+    | & y: UInt64.t = Any.any_l ()
+    | & _24: UInt64.t = Any.any_l ()
+    | & x'0: UInt64.t = Any.any_l ()
+    | & y'0: UInt64.t = Any.any_l () ])
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self.a ra
+        /\ postcondition_size_hint'0 () self.b rb
+        /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+        /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+        /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+          | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+          /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+          | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+          | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+          | {f0'0 = None; f1'0 = None} -> result.f1 = None
+          end}
+      (! return {result}) ]
+end
+module M_impl_Iterator_for_Zip_A_B__size_hint__refines (* <Zip<A, B> as common::Iterator> *)
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use int.Int
+  
+  type t_A
+  
+  type t_B
+  
+  type t_Zip_A_B = { a: t_A; b: t_B }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate inv_Zip_A_B (_1: t_Zip_A_B)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Zip_A_B [inv_Zip_A_B _1]. inv_Zip_A_B _1 = (inv_A _1.a /\ inv_B _1.b)
+  
+  predicate invariant_ref_Zip_A_B [@inline:trivial] (self: t_Zip_A_B) = inv_Zip_A_B self
+  
+  meta "rewrite_def" predicate invariant_ref_Zip_A_B
+  
+  predicate inv_ref_Zip_A_B [@inline:trivial] (_1: t_Zip_A_B) = invariant_ref_Zip_A_B _1
+  
+  meta "rewrite_def" predicate inv_ref_Zip_A_B
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_A (self: t_A) (visited: Seq.seq t_Item) (o: t_A)
+  
+  function produces_trans_A (a'0: t_A) (ab: Seq.seq t_Item) (b'0: t_A) (bc: Seq.seq t_Item) (c: t_A) : ()
+  
+  axiom produces_trans_A_spec:
+    forall a'0: t_A, ab: Seq.seq t_Item, b'0: t_A, bc: Seq.seq t_Item, c: t_A. produces_A a'0 ab b'0
+      -> produces_A b'0 bc c -> produces_A a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_A (self: t_A) : ()
+  
+  axiom produces_refl_A_spec: forall self: t_A. produces_A self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_A (self: MutBorrow.t t_A)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_A. produces_A self s i.current /\ completed_A i
+          -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_A. produces_A self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate invariant_ref_A [@inline:trivial] (self: t_A) = inv_A self
+  
+  meta "rewrite_def" predicate invariant_ref_A
+  
+  predicate inv_ref_A [@inline:trivial] (_1: t_A) = invariant_ref_A _1
+  
+  meta "rewrite_def" predicate inv_ref_A
+  
+  predicate precondition_size_hint (self: ()) (args: t_A)
+  
+  axiom precondition_fndef: forall args: t_A [precondition_size_hint () args]. (let self = args in inv_ref_A self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_A) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_A (self: t_A) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  type t_Item'0
+  
+  predicate produces_B (self: t_B) (visited: Seq.seq t_Item'0) (o: t_B)
+  
+  function produces_trans_B (a'0: t_B) (ab: Seq.seq t_Item'0) (b'0: t_B) (bc: Seq.seq t_Item'0) (c: t_B) : ()
+  
+  axiom produces_trans_B_spec:
+    forall a'0: t_B, ab: Seq.seq t_Item'0, b'0: t_B, bc: Seq.seq t_Item'0, c: t_B. produces_B a'0 ab b'0
+      -> produces_B b'0 bc c -> produces_B a'0 (Seq.(++) ab bc) c
+  
+  function produces_refl_B (self: t_B) : ()
+  
+  axiom produces_refl_B_spec: forall self: t_B. produces_B self (Seq.empty: Seq.seq t_Item'0) self
+  
+  predicate completed_B (self: MutBorrow.t t_B)
+  
+  predicate postcondition_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_B, result: tup2_usize_Option_usize [postcondition_size_hint'0 () args result]. postcondition_size_hint'0 () args result
+      -> (let self = args in (forall s: Seq.seq t_Item'0, i: MutBorrow.t t_B. produces_B self s i.current
+            /\ completed_B i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item'0, i: t_B. produces_B self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate invariant_ref_B [@inline:trivial] (self: t_B) = inv_B self
+  
+  meta "rewrite_def" predicate invariant_ref_B
+  
+  predicate inv_ref_B [@inline:trivial] (_1: t_B) = invariant_ref_B _1
+  
+  meta "rewrite_def" predicate inv_ref_B
+  
+  predicate precondition_size_hint'0 (self: ()) (args: t_B)
+  
+  axiom precondition_fndef'0: forall args: t_B [precondition_size_hint'0 () args]. (let self = args in inv_ref_B self)
+      -> precondition_size_hint'0 () args
+  
+  predicate postcondition_once_size_hint'0 (self: ()) (args: t_B) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint'0 self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint'0
+  
+  let size_hint_B (self: t_B) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint'0 () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint'0 () self result}
+      (! return {result}) ]
+  
+  predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = other <= self
+  
+  meta "rewrite_def" predicate ge_log_Int
+  
+  type tup2_Option_usize_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  type tup2_Item_Item = { f0'1: t_Item; f1'1: t_Item'0 }
+  
+  predicate produces_Zip_A_B (self: t_Zip_A_B) (visited: Seq.seq tup2_Item_Item) (tl: t_Zip_A_B) =
+    exists p1: Seq.seq t_Item, p2: Seq.seq t_Item'0. Seq.length p1 = Seq.length p2
+      /\ Seq.length p2 = Seq.length visited
+      /\ (forall i: int. 0 <= i /\ i < Seq.length visited
+          -> Seq.get visited i = { f0'1 = Seq.get p1 i; f1'1 = Seq.get p2 i })
+      /\ produces_A self.a p1 tl.a /\ produces_B self.b p2 tl.b
+  
+  predicate resolve_Item (_1: t_Item)
+  
+  predicate completed_Zip_A_B (self: MutBorrow.t t_Zip_A_B) =
+    completed_A (MutBorrow.borrow_logic self.current.a self.final.a (MutBorrow.inherit_id (MutBorrow.get_id self) 0))
+      /\ self.current.b = self.final.b
+    \/ (exists x: t_Item. produces_A self.current.a (Seq.singleton x) self.final.a
+      /\ resolve_Item x
+      /\ completed_B (MutBorrow.borrow_logic self.current.b self.final.b (MutBorrow.inherit_id (MutBorrow.get_id self) 1)))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: t_Zip_A_B. inv_ref_Zip_A_B self
+      -> inv_ref_Zip_A_B self
+      /\ (forall result: tup2_usize_Option_usize. (exists ra: tup2_usize_Option_usize, rb: tup2_usize_Option_usize. postcondition_size_hint () self.a ra
+            /\ postcondition_size_hint'0 () self.b rb
+            /\ (UInt64.t'int ra.f0 <= UInt64.t'int rb.f0 -> result.f0 = ra.f0)
+            /\ (ge_log_Int (UInt64.t'int ra.f0) (UInt64.t'int rb.f0) -> result.f0 = rb.f0)
+            /\ match { f0'0 = ra.f1; f1'0 = rb.f1 } with
+              | {f0'0 = Some ua; f1'0 = Some ub} -> (UInt64.t'int ua <= UInt64.t'int ub -> result.f1 = Some ua)
+              /\ (ge_log_Int (UInt64.t'int ua) (UInt64.t'int ub) -> result.f1 = Some ub)
+              | {f0'0 = Some ua; f1'0 = None} -> result.f1 = Some ua
+              | {f0'0 = None; f1'0 = Some ub} -> result.f1 = Some ub
+              | {f0'0 = None; f1'0 = None} -> result.f1 = None
+              end)
+        -> (forall s: Seq.seq tup2_Item_Item, i: MutBorrow.t t_Zip_A_B. produces_Zip_A_B self s i.current
+              /\ completed_Zip_A_B i -> UInt64.t'int result.f0 <= Seq.length s)
+        /\ match result.f1 with
+          | Some r -> forall s: Seq.seq tup2_Item_Item, i: t_Zip_A_B. produces_Zip_A_B self s i
+            -> Seq.length s <= UInt64.t'int r
+          | None -> true
+          end)
+end

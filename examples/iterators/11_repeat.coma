@@ -1,0 +1,625 @@
+module M_common__trait_ExactSizeIterator__is_empty
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_Self
+  
+  predicate inv_Self (_1: t_Self)
+  
+  predicate invariant_ref_Self [@inline:trivial] (self: t_Self) = inv_Self self
+  
+  meta "rewrite_def" predicate invariant_ref_Self
+  
+  predicate inv_ref_Self [@inline:trivial] (_1: t_Self) = invariant_ref_Self _1
+  
+  meta "rewrite_def" predicate inv_ref_Self
+  
+  predicate precondition_len (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef: forall args: t_Self [precondition_len () args]. (let self = args in inv_ref_Self self)
+      -> precondition_len () args
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_Self (self: t_Self) (visited: Seq.seq t_Item) (o: t_Self)
+  
+  function produces_trans_Self (a: t_Self) (ab: Seq.seq t_Item) (b: t_Self) (bc: Seq.seq t_Item) (c: t_Self) : ()
+  
+  axiom produces_trans_Self_spec:
+    forall a: t_Self, ab: Seq.seq t_Item, b: t_Self, bc: Seq.seq t_Item, c: t_Self. produces_Self a ab b
+      -> produces_Self b bc c -> produces_Self a (Seq.(++) ab bc) c
+  
+  function produces_refl_Self (self: t_Self) : ()
+  
+  axiom produces_refl_Self_spec: forall self: t_Self. produces_Self self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_Self (self: MutBorrow.t t_Self)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_Self, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_Self. produces_Self self s i.current
+            /\ completed_Self i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_Self. produces_Self self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate precondition_size_hint (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef'0:
+    forall args: t_Self [precondition_size_hint () args]. (let self = args in inv_ref_Self self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_Self (self: t_Self) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  predicate postcondition_len (self: ()) (args: t_Self) (result: UInt64.t)
+  
+  axiom postcondition_fndef'0:
+    forall args: t_Self, result: UInt64.t [postcondition_len () args result]. postcondition_len () args result
+      -> (let self = args in postcondition_size_hint () self { f0 = result; f1 = Some result })
+  
+  predicate postcondition_once_len (self: ()) (args: t_Self) (result: UInt64.t) = postcondition_len self args result
+  
+  meta "rewrite_def" predicate postcondition_once_len
+  
+  let len_Self (self: t_Self) (return (x: UInt64.t)) = {[@stop_split] [@expl:len requires] precondition_len () self}
+    any
+    [ return (result: UInt64.t) -> {[@stop_split] [@expl:len ensures] postcondition_once_len () self result}
+      (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let is_empty_Self (self: t_Self) (return (x: bool)) =
+  {[@stop_split] [@expl:is_empty 'self' type invariant] inv_ref_Self self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = len_Self {self} (fun (_x: UInt64.t) -> [ &_4 <- _x ] s1)
+      | s1 = [ &_ret <- _4 = (0: UInt64.t) ] s2
+      | s2 = return {_ret} ] ] [ & _ret: bool = Any.any_l () | & self: t_Self = self | & _4: UInt64.t = Any.any_l () ])
+    [ return (result: bool) ->
+    {[@stop_split] [@expl:is_empty ensures] exists l: UInt64.t. postcondition_size_hint () self { f0 = l; f1 = Some l }
+        /\ result = (l = (0: UInt64.t))}
+      (! return {result}) ]
+end
+module M_common__trait_ExactSizeIterator__len
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use int.Int
+  
+  type t_Self
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  type t_Item
+  
+  predicate produces_Self (self: t_Self) (visited: Seq.seq t_Item) (o: t_Self)
+  
+  function produces_trans_Self (a: t_Self) (ab: Seq.seq t_Item) (b: t_Self) (bc: Seq.seq t_Item) (c: t_Self) : ()
+  
+  axiom produces_trans_Self_spec:
+    forall a: t_Self, ab: Seq.seq t_Item, b: t_Self, bc: Seq.seq t_Item, c: t_Self. produces_Self a ab b
+      -> produces_Self b bc c -> produces_Self a (Seq.(++) ab bc) c
+  
+  function produces_refl_Self (self: t_Self) : ()
+  
+  axiom produces_refl_Self_spec: forall self: t_Self. produces_Self self (Seq.empty: Seq.seq t_Item) self
+  
+  predicate completed_Self (self: MutBorrow.t t_Self)
+  
+  predicate postcondition_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize)
+  
+  axiom postcondition_fndef:
+    forall args: t_Self, result: tup2_usize_Option_usize [postcondition_size_hint () args result]. postcondition_size_hint () args result
+      -> (let self = args in (forall s: Seq.seq t_Item, i: MutBorrow.t t_Self. produces_Self self s i.current
+            /\ completed_Self i -> UInt64.t'int result.f0 <= Seq.length s)
+      /\ match result.f1 with
+        | Some r -> forall s: Seq.seq t_Item, i: t_Self. produces_Self self s i -> Seq.length s <= UInt64.t'int r
+        | None -> true
+        end)
+  
+  predicate inv_Self (_1: t_Self)
+  
+  predicate invariant_ref_Self [@inline:trivial] (self: t_Self) = inv_Self self
+  
+  meta "rewrite_def" predicate invariant_ref_Self
+  
+  predicate inv_ref_Self [@inline:trivial] (_1: t_Self) = invariant_ref_Self _1
+  
+  meta "rewrite_def" predicate inv_ref_Self
+  
+  predicate precondition_size_hint (self: ()) (args: t_Self)
+  
+  axiom precondition_fndef: forall args: t_Self [precondition_size_hint () args]. (let self = args in inv_ref_Self self)
+      -> precondition_size_hint () args
+  
+  predicate postcondition_once_size_hint (self: ()) (args: t_Self) (result: tup2_usize_Option_usize) =
+    postcondition_size_hint self args result
+  
+  meta "rewrite_def" predicate postcondition_once_size_hint
+  
+  let size_hint_Self (self: t_Self) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint requires] precondition_size_hint () self}
+    any
+    [ return (result: tup2_usize_Option_usize) ->
+    {[@stop_split] [@expl:size_hint ensures] postcondition_once_size_hint () self result}
+      (! return {result}) ]
+  
+  function size_hint_exact_Self (self: t_Self) (r: tup2_usize_Option_usize) : ()
+  
+  axiom size_hint_exact_Self_spec: forall self: t_Self, r: tup2_usize_Option_usize. postcondition_size_hint () self r
+      -> r.f1 = Some (r.f0)
+  
+  type tup2_ref_Option_usize_ref_Option_usize = { f0'0: t_Option_usize; f1'0: t_Option_usize }
+  
+  type t_Option_Int = None'0 | Some'0 int
+  
+  function deep_model_usize [@inline:trivial] (self: UInt64.t) : int = UInt64.t'int self
+  
+  meta "rewrite_def" function deep_model_usize
+  
+  function deep_model_Option_usize [@inline:trivial] (self: t_Option_usize) : t_Option_Int = match self with
+      | Some t -> Some'0 (deep_model_usize t)
+      | None -> None'0
+      end
+  
+  meta "rewrite_def" function deep_model_Option_usize
+  
+  function deep_model_ref_Option_usize [@inline:trivial] (self: t_Option_usize) : t_Option_Int =
+    deep_model_Option_usize self
+  
+  meta "rewrite_def" function deep_model_ref_Option_usize
+  
+  let eq_Option_usize (self: t_Option_usize) (other: t_Option_usize) (return (x: bool)) = any
+    [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] result
+      = (deep_model_ref_Option_usize self = deep_model_ref_Option_usize other)}
+      (! return {result}) ]
+  
+  type t_AssertKind = Eq | Ne | Match
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let len_Self (self: t_Self) (return (x: UInt64.t)) =
+  {[@stop_split] [@expl:len 'self' type invariant] inv_ref_Self self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = [ &_4 <- () ] s1
+      | s1 = size_hint_Self {self} (fun (_x: tup2_usize_Option_usize) -> [ &_8 <- _x ] s2)
+      | s2 = [ &lower <- _8.f0 ] s3
+      | s3 = [ &upper <- _8.f1 ] s4
+      | s4 = [ &_14 <- Some lower ] s5
+      | s5 = [ &_11 <- { f0'0 = upper; f1'0 = _14 } ] s6
+      | s6 = [ &left_val <- _11.f0'0 ] s7
+      | s7 = [ &right_val <- _11.f1'0 ] s8
+      | s8 = eq_Option_usize {left_val} {right_val} (fun (_x: bool) -> [ &_18 <- _x ] s9)
+      | s9 = any [ br0 -> {_18 = false} (! bb5) | br1 -> {_18} (! bb4) ] ]
+    | bb4 = s0 [ s0 = [ &_ret <- lower ] s1 | s1 = return {_ret} ]
+    | bb5 = s0
+      [ s0 = [ &kind <- Eq ] s1 | s1 = [ &_26 <- left_val ] s2 | s2 = [ &_28 <- right_val ] s3 | s3 = {false} any ] ]
+    [ & _ret: UInt64.t = Any.any_l ()
+    | & self: t_Self = self
+    | & _4: () = Any.any_l ()
+    | & lower: UInt64.t = Any.any_l ()
+    | & upper: t_Option_usize = Any.any_l ()
+    | & _8: tup2_usize_Option_usize = Any.any_l ()
+    | & _11: tup2_ref_Option_usize_ref_Option_usize = Any.any_l ()
+    | & _14: t_Option_usize = Any.any_l ()
+    | & left_val: t_Option_usize = Any.any_l ()
+    | & right_val: t_Option_usize = Any.any_l ()
+    | & _18: bool = Any.any_l ()
+    | & kind: t_AssertKind = Any.any_l ()
+    | & _26: t_Option_usize = Any.any_l ()
+    | & _28: t_Option_usize = Any.any_l () ])
+    [ return (result: UInt64.t) -> {[@stop_split] [@expl:len ensures] postcondition_size_hint () self { f0 = result;
+                                                                                                        f1 = Some result }}
+      (! return {result}) ]
+end
+module M_impl_Iterator_for_Repeat_A__next (* <Repeat<A> as common::Iterator> *)
+  use creusot.prelude.MutBorrow
+  use creusot.prelude.Any
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_Repeat_A (_1: t_Repeat_A)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Repeat_A [inv_Repeat_A _1]. inv_Repeat_A _1 = inv_A _1.element
+  
+  predicate invariant_refmut_Repeat_A [@inline:trivial] (self: MutBorrow.t t_Repeat_A) =
+    inv_Repeat_A self.current /\ inv_Repeat_A self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Repeat_A
+  
+  predicate inv_refmut_Repeat_A [@inline:trivial] (_1: MutBorrow.t t_Repeat_A) = invariant_refmut_Repeat_A _1
+  
+  meta "rewrite_def" predicate inv_refmut_Repeat_A
+  
+  predicate resolve_refmut_Repeat_A [@inline:trivial] (_1: MutBorrow.t t_Repeat_A) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_Repeat_A
+  
+  predicate invariant_ref_A [@inline:trivial] (self: t_A) = inv_A self
+  
+  meta "rewrite_def" predicate invariant_ref_A
+  
+  predicate inv_ref_A [@inline:trivial] (_1: t_A) = invariant_ref_A _1
+  
+  meta "rewrite_def" predicate inv_ref_A
+  
+  predicate precondition_clone (self: ()) (args: t_A)
+  
+  axiom precondition_fndef: forall args: t_A [precondition_clone () args]. (let self = args in inv_ref_A self)
+      -> precondition_clone () args
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate postcondition_once_clone (self: ()) (args: t_A) (result: t_A) = postcondition_clone self args result
+  
+  meta "rewrite_def" predicate postcondition_once_clone
+  
+  let clone_A (self: t_A) (return (x: t_A)) = {[@stop_split] [@expl:clone requires] precondition_clone () self}
+    any
+    [ return (result: t_A) -> {[@stop_split] [@expl:clone ensures] postcondition_once_clone () self result}
+      (! return {result}) ]
+  
+  type t_Option_A = None | Some t_A
+  
+  predicate inv_Option_A (_1: t_Option_A)
+  
+  axiom inv_axiom'0 [@rewrite]: forall _1: t_Option_A [inv_Option_A _1]. inv_Option_A _1
+      = match _1 with
+        | None -> true
+        | Some f0 -> inv_A f0
+        end
+  
+  predicate completed_Repeat_A (self: MutBorrow.t t_Repeat_A) = false
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let next_Repeat_A (self: MutBorrow.t t_Repeat_A) (return (x: t_Option_A)) =
+  {[@stop_split] [@expl:next 'self' type invariant] inv_refmut_Repeat_A self}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = s1 [ _ck -> (! {[@expl:type invariant] inv_refmut_Repeat_A self} any) ]
+      | s1 = -{resolve_refmut_Repeat_A self}- s2
+      | s2 = clone_A {self.current.element} (fun (_x: t_A) -> [ &_4 <- _x ] s3)
+      | s3 = [ &_ret <- Some _4 ] s4
+      | s4 = return {_ret} ] ]
+    [ & _ret: t_Option_A = Any.any_l () | & self: MutBorrow.t t_Repeat_A = self | & _4: t_A = Any.any_l () ])
+    [ return (result: t_Option_A) ->
+    {[@stop_split] [@expl:next_Repeat_A ensures] ([@stop_split] [@expl:next result type invariant] inv_Option_A result)
+      /\ ([@stop_split] [@expl:next ensures] match result with
+        | None -> completed_Repeat_A self
+        | Some v -> produces_Repeat_A self.current (Seq.singleton v) self.final
+        end)}
+      (! return {result}) ]
+end
+module M_impl_Iterator_for_Repeat_A__next__refines (* <Repeat<A> as common::Iterator> *)
+  use creusot.prelude.MutBorrow
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_Repeat_A (_1: t_Repeat_A)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Repeat_A [inv_Repeat_A _1]. inv_Repeat_A _1 = inv_A _1.element
+  
+  predicate invariant_refmut_Repeat_A [@inline:trivial] (self: MutBorrow.t t_Repeat_A) =
+    inv_Repeat_A self.current /\ inv_Repeat_A self.final
+  
+  meta "rewrite_def" predicate invariant_refmut_Repeat_A
+  
+  predicate inv_refmut_Repeat_A [@inline:trivial] (_1: MutBorrow.t t_Repeat_A) = invariant_refmut_Repeat_A _1
+  
+  meta "rewrite_def" predicate inv_refmut_Repeat_A
+  
+  type t_Option_A = None | Some t_A
+  
+  predicate inv_Option_A (_1: t_Option_A)
+  
+  axiom inv_axiom'0 [@rewrite]: forall _1: t_Option_A [inv_Option_A _1]. inv_Option_A _1
+      = match _1 with
+        | None -> true
+        | Some f0 -> inv_A f0
+        end
+  
+  predicate completed_Repeat_A (self: MutBorrow.t t_Repeat_A) = false
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: MutBorrow.t t_Repeat_A. inv_refmut_Repeat_A self
+      -> inv_refmut_Repeat_A self
+      /\ (forall result: t_Option_A. inv_Option_A result
+          /\ match result with
+            | None -> completed_Repeat_A self
+            | Some v -> produces_Repeat_A self.current (Seq.singleton v) self.final
+            end
+        -> inv_Option_A result
+        /\ match result with
+          | None -> completed_Repeat_A self
+          | Some v -> produces_Repeat_A self.current (Seq.singleton v) self.final
+          end)
+end
+module M_impl_Iterator_for_Repeat_A__produces_refl (* <Repeat<A> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant self : t_Repeat_A
+  
+  function produces_refl_Repeat_A (self: t_Repeat_A) : ()
+  
+  goal vc_produces_refl_Repeat_A:
+    [@stop_split] [@expl:produces_refl ensures] produces_Repeat_A self (Seq.empty: Seq.seq t_A) self
+end
+module M_impl_Iterator_for_Repeat_A__produces_refl__refines (* <Repeat<A> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: t_Repeat_A. forall result: (). produces_Repeat_A self (Seq.empty: Seq.seq t_A) self
+        -> produces_Repeat_A self (Seq.empty: Seq.seq t_A) self
+end
+module M_impl_Iterator_for_Repeat_A__produces_trans (* <Repeat<A> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant a : t_Repeat_A
+  
+  constant ab : Seq.seq t_A
+  
+  constant b : t_Repeat_A
+  
+  constant bc : Seq.seq t_A
+  
+  constant c : t_Repeat_A
+  
+  function produces_trans_Repeat_A (a: t_Repeat_A) (ab: Seq.seq t_A) (b: t_Repeat_A) (bc: Seq.seq t_A) (c: t_Repeat_A) : ()
+  
+  goal vc_produces_trans_Repeat_A: produces_Repeat_A a ab b
+    -> produces_Repeat_A b bc c -> ([@stop_split] [@expl:produces_trans ensures] produces_Repeat_A a (Seq.(++) ab bc) c)
+end
+module M_impl_Iterator_for_Repeat_A__produces_trans__refines (* <Repeat<A> as common::Iterator> *)
+  use seq.Seq
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines:
+    forall a: t_Repeat_A, ab: Seq.seq t_A, b: t_Repeat_A, bc: Seq.seq t_A, c: t_Repeat_A. produces_Repeat_A a ab b
+      -> produces_Repeat_A b bc c
+      -> produces_Repeat_A a ab b
+      /\ produces_Repeat_A b bc c
+      /\ (forall result: (). produces_Repeat_A a (Seq.(++) ab bc) c -> produces_Repeat_A a (Seq.(++) ab bc) c)
+end
+module M_impl_Iterator_for_Repeat_A__size_hint (* <Repeat<A> as common::Iterator> *)
+  use creusot.int.UInt64
+  use creusot.prelude.Any
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_Repeat_A (_1: t_Repeat_A)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Repeat_A [inv_Repeat_A _1]. inv_Repeat_A _1 = inv_A _1.element
+  
+  predicate invariant_ref_Repeat_A [@inline:trivial] (self: t_Repeat_A) = inv_Repeat_A self
+  
+  meta "rewrite_def" predicate invariant_ref_Repeat_A
+  
+  predicate inv_ref_Repeat_A [@inline:trivial] (_1: t_Repeat_A) = invariant_ref_Repeat_A _1
+  
+  meta "rewrite_def" predicate inv_ref_Repeat_A
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let size_hint_Repeat_A (self: t_Repeat_A) (return (x: tup2_usize_Option_usize)) =
+  {[@stop_split] [@expl:size_hint 'self' type invariant] inv_ref_Repeat_A self}
+    (! bb0
+    [ bb0 = s0 [ s0 = [ &_3 <- None ] s1 | s1 = [ &_ret <- { f0 = const_MAX; f1 = _3 } ] s2 | s2 = return {_ret} ] ]
+    [ & _ret: tup2_usize_Option_usize = Any.any_l () | & _3: t_Option_usize = Any.any_l () ])
+    [ return (result: tup2_usize_Option_usize) -> {[@stop_split] [@expl:size_hint ensures] result
+      = { f0 = const_MAX; f1 = None }}
+      (! return {result}) ]
+end
+module M_impl_Iterator_for_Repeat_A__size_hint__refines (* <Repeat<A> as common::Iterator> *)
+  use creusot.int.UInt64
+  use seq.Seq
+  use creusot.prelude.MutBorrow
+  use int.Int
+  
+  type t_A
+  
+  type t_Repeat_A = { element: t_A }
+  
+  predicate inv_A (_1: t_A)
+  
+  predicate inv_Repeat_A (_1: t_Repeat_A)
+  
+  axiom inv_axiom [@rewrite]: forall _1: t_Repeat_A [inv_Repeat_A _1]. inv_Repeat_A _1 = inv_A _1.element
+  
+  predicate invariant_ref_Repeat_A [@inline:trivial] (self: t_Repeat_A) = inv_Repeat_A self
+  
+  meta "rewrite_def" predicate invariant_ref_Repeat_A
+  
+  predicate inv_ref_Repeat_A [@inline:trivial] (_1: t_Repeat_A) = invariant_ref_Repeat_A _1
+  
+  meta "rewrite_def" predicate inv_ref_Repeat_A
+  
+  type t_Option_usize = None | Some UInt64.t
+  
+  type tup2_usize_Option_usize = { f0: UInt64.t; f1: t_Option_usize }
+  
+  constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+  
+  predicate postcondition_clone (self: ()) (args: t_A) (result: t_A)
+  
+  axiom postcondition_fndef:
+    forall args: t_A, result: t_A [postcondition_clone () args result]. postcondition_clone () args result
+      -> (let self = args in inv_A result)
+  
+  predicate produces_Repeat_A (self: t_Repeat_A) (visited: Seq.seq t_A) (o: t_Repeat_A) =
+    self = o
+    /\ (forall i: int. 0 <= i /\ i < Seq.length visited -> postcondition_clone () self.element (Seq.get visited i))
+  
+  predicate completed_Repeat_A (self: MutBorrow.t t_Repeat_A) = false
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  goal refines: forall self: t_Repeat_A. inv_ref_Repeat_A self
+      -> inv_ref_Repeat_A self
+      /\ (forall result: tup2_usize_Option_usize. result = { f0 = const_MAX; f1 = None }
+        -> (forall s: Seq.seq t_A, i: MutBorrow.t t_Repeat_A. produces_Repeat_A self s i.current /\ completed_Repeat_A i
+            -> UInt64.t'int result.f0 <= Seq.length s)
+        /\ match result.f1 with
+          | Some r -> forall s: Seq.seq t_A, i: t_Repeat_A. produces_Repeat_A self s i -> Seq.length s <= UInt64.t'int r
+          | None -> true
+          end)
+end

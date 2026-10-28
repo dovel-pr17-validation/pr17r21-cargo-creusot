@@ -1,0 +1,8 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_test_maintains": {
+      "vc_test_maintains": { "prover": "cvc5", "time": 0.011 }
+    }
+  }
+}

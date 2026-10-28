@@ -1,0 +1,1441 @@
+use crate::{
+    backend::{
+        self, Why3Generator,
+        closures::{closure_hist_inv, closure_post, closure_pre, ctor_post, ctor_pre},
+        logic::{lower_logical_defn, spec_axioms},
+        module_context::{DepGraphBuilder, Dependency, Kind, ModuleContext, Namer},
+        program,
+        resolve::{ResolveDef, elaborate_resolve_def, structural_resolve},
+        signature::{LogicSignature, lower_logic_sig, lower_program_sig},
+        term::{lower_pure, lower_pure_weakdep},
+        ty::{
+            constructor, eliminator, translate_adtdecl, translate_closure_ty, translate_tuple_ty,
+            translate_ty,
+        },
+        ty_inv::{TyInvDef, elaborate_tyinv_def, inv_call, sig_add_type_invariant_spec},
+    },
+    contracts_items::{Intrinsic, get_builtin, is_law, is_logic, why3_metas},
+    ctx::{BodyId, HasTyCtxt, ItemType},
+    naming::name,
+    resolution::TraitResolved,
+    translation::{
+        constant::try_const_to_term,
+        pearlite::{
+            BinOp, PIdent, Pattern, QuantKind, Substable as _, Term, TermWithTriggers, Trigger,
+            normalize,
+        },
+        specification::Condition,
+    },
+};
+use rustc_ast::Mutability;
+use rustc_hir::{def::DefKind, def_id::DefId};
+use rustc_middle::ty::{
+    self, AliasTyKind, Const, GenericArg, GenericArgsRef, TraitRef, Ty, TyCtxt, TyKind, TypingEnv,
+};
+use rustc_span::{DUMMY_SP, Span, Symbol};
+use rustc_type_ir::{AliasTy, ClosureKind, ConstKind, EarlyBinder};
+use std::{
+    assert_matches,
+    cell::{LazyCell, RefCell},
+    collections::{HashMap, HashSet},
+};
+use why3::{
+    Exp, Ident, Name,
+    coma::{Defn, Expr, Param, Prototype},
+    declaration::{
+        Axiom, Decl, DeclKind, LogicDecl, Meta, MetaArg, MetaIdent, Signature, TyDecl, Use,
+    },
+    ty::Type,
+};
+
+/// Weak dependencies are allowed to form cycles in the graph, but strong ones cannot,
+/// weak dependencies are used to perform an initial stratification of the dependency graph.
+#[derive(PartialEq, PartialOrd, Copy, Clone, Debug)]
+pub enum Strength {
+    Weak,
+    Strong,
+}
+
+/// The `Expander` takes a list of 'root' dependencies (items explicitly requested by user code),
+/// and expands this into a complete dependency graph.
+pub(super) struct Expander<'a, 'ctx, 'tcx> {
+    dep_bodies: HashMap<Dependency<'tcx>, Vec<Decl>>,
+    namer: &'a mut ModuleContext<'ctx, 'tcx>,
+    ctx: &'a Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    dep_graph: DepGraphBuilder<'tcx>,
+    /// Span for the item we are expanding
+    root_span: Span,
+}
+
+impl<'a, 'ctx, 'tcx> HasTyCtxt<'tcx> for Expander<'a, 'ctx, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.ctx.tcx
+    }
+}
+
+struct ExpansionProxy<'a, 'ctx, 'tcx> {
+    namer: &'a mut ModuleContext<'ctx, 'tcx>,
+    dep_graph: RefCell<&'a mut DepGraphBuilder<'tcx>>,
+    source: Dependency<'tcx>,
+}
+
+impl<'tcx> Namer<'tcx> for ExpansionProxy<'_, '_, 'tcx> {
+    fn raw_dependency(&self, dep: Dependency<'tcx>) -> &Kind {
+        self.dep_graph.borrow_mut().add_edge(self.source, Strength::Strong, dep);
+        self.namer.raw_dependency(dep)
+    }
+
+    fn register_constant_setter(&mut self, setter: Ident) {
+        self.namer.register_constant_setter(setter);
+    }
+
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.namer.tcx()
+    }
+
+    fn source_id(&self) -> DefId {
+        self.namer.source_id()
+    }
+
+    fn typing_env(&self) -> TypingEnv<'tcx> {
+        self.namer.typing_env()
+    }
+
+    fn span(&self, span: Span) -> Option<Ident> {
+        self.namer.span(span)
+    }
+
+    fn bitwise_mode(&self) -> bool {
+        self.namer.bitwise_mode()
+    }
+
+    fn get_namespace_constructor(&self, namespace_fun: DefId) -> Ident {
+        self.namer.get_namespace_constructor(namespace_fun)
+    }
+}
+
+/// The element-wise structural postcondition of a builtin `Clone` impl, for a tuple or closure.
+/// At each child it emits `<F as Clone>::clone.postcondition((&f,), result_f)`
+/// `self_val`/`result_val` are by-value terms of type `ty`.
+fn builtin_clone_posts<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    self_val: Term<'tcx>,
+    result_val: Term<'tcx>,
+) -> Vec<Term<'tcx>> {
+    let field_tys: Box<dyn Iterator<Item = Ty>> = match self_val.ty.kind() {
+        TyKind::Tuple(tys) => Box::new(tys.iter()),
+        TyKind::Closure(_, subst) => Box::new(subst.as_closure().upvar_tys().iter()),
+        _ => unreachable!("Builtin impls of Clone should be limited to tuples and closures"),
+    };
+
+    field_tys
+        .enumerate()
+        .map(|(i, field_ty)| {
+            let self_i = self_val.clone().proj(i.into(), field_ty);
+            let result_i = result_val.clone().proj(i.into(), field_ty);
+            let fndef_ty = ctx.tcx.normalize_erasing_regions(
+                typing_env,
+                ctx.tcx
+                    .type_of(ctx.lang_items().clone_fn().unwrap())
+                    .instantiate(ctx.tcx, ctx.mk_args(&[GenericArg::from(field_ty)])),
+            );
+            let args = Term::tuple(ctx.tcx, [self_i.shr_ref(ctx.tcx)]);
+            let subst = ctx.mk_args(&[args.ty, fndef_ty].map(GenericArg::from));
+            let post_args = [Term::unit(ctx.tcx).coerce(fndef_ty), args, result_i];
+            Term::call(ctx.tcx, typing_env, Intrinsic::PostconditionOnce.get(ctx), subst, post_args)
+        })
+        .collect()
+}
+
+impl<'a, 'ctx, 'tcx> Expander<'a, 'ctx, 'tcx> {
+    fn expand_program(&mut self, def_id: DefId, subst: GenericArgsRef<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Item(def_id, subst);
+        let typing_env = self.typing_env;
+        let ctx = self.ctx;
+        let names = self.namer(dep);
+
+        let name = names.dependency(dep).ident();
+
+        let mut pre_sig = ctx.sig(def_id).clone().instantiate_and_normalize(ctx, subst, typing_env);
+
+        if matches!(ctx.intrinsic(def_id), Intrinsic::GhostDeref | Intrinsic::GhostDerefMut) {
+            // If `Ghost::deref`` or `Ghost::deref_mut` are called direclty, then
+            // the validation pass has checked that the call is in the right context.
+            // Hence we can remove the precondition `#[requires(false)]` which was protecting
+            // against indirect calls (via generics).
+            pre_sig.contract.requires.clear();
+        }
+
+        match TraitResolved::resolve_item(ctx.tcx, typing_env, def_id, subst) {
+            TraitResolved::UnknownFound
+                if ctx.fn_sig(def_id).skip_binder().is_fn_trait_compatible()
+                    && ctx.codegen_fn_attrs(def_id).target_features.is_empty() =>
+            {
+                let fn_name = ctx.item_name(def_id);
+
+                let args = Term::tuple(
+                    ctx.tcx,
+                    pre_sig.inputs.iter().map(|&(nm, _, ty)| Term::var(nm, ty)),
+                );
+                let fndef_ty = ctx.tcx.normalize_erasing_regions(
+                    typing_env,
+                    ctx.tcx.type_of(def_id).instantiate(ctx.tcx, subst),
+                );
+
+                let pre_post_subst = ctx.mk_args(&[args.ty, fndef_ty].map(GenericArg::from));
+
+                let pre_did = Intrinsic::Precondition.get(ctx);
+                let pre_args = [Term::unit(ctx.tcx).coerce(fndef_ty), args.clone()];
+                let pre = Term::call(ctx.tcx, typing_env, pre_did, pre_post_subst, pre_args);
+                let expl_pre = format!("expl:{} requires", fn_name);
+                pre_sig.contract.requires = vec![Condition { term: pre, expl: expl_pre }];
+
+                let post_did = Intrinsic::PostconditionOnce.get(ctx);
+                let post_args = [
+                    Term::unit(ctx.tcx).coerce(fndef_ty),
+                    args,
+                    Term::var(name::result(), pre_sig.output),
+                ];
+                let post = Term::call(ctx.tcx, typing_env, post_did, pre_post_subst, post_args);
+                let expl_post = format!("expl:{} ensures", fn_name);
+                pre_sig.contract.ensures =
+                    vec![(Box::new([]), Condition { term: post, expl: expl_post })]
+            }
+            TraitResolved::BuiltinClone => {
+                let (self_nm, _, self_ty) = pre_sig.inputs[0];
+                let self_val = Term::var(self_nm, self_ty).deref();
+                let result = Term::var(name::result(), pre_sig.output);
+                assert!(pre_sig.contract.ensures.is_empty());
+                pre_sig.contract.ensures = builtin_clone_posts(ctx, typing_env, self_val, result)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, term)| {
+                        let trig: Box<[_]> = Box::new([]);
+                        let expl = format!("expl:{} ensures #{i}", ctx.item_name(def_id));
+                        (trig, Condition { term, expl })
+                    })
+                    .collect();
+            }
+            TraitResolved::Instance { .. }
+            | TraitResolved::UnknownFound
+            | TraitResolved::BuiltinDyn
+            | TraitResolved::BuiltinFn
+            | TraitResolved::NotATraitItem => sig_add_type_invariant_spec(
+                ctx,
+                typing_env,
+                names.source_id(),
+                &mut pre_sig,
+                def_id,
+            ),
+            TraitResolved::NoInstance(..) => unreachable!(),
+        }
+
+        let sig = lower_program_sig(ctx, &names, name, &pre_sig, def_id);
+        vec![program::val(sig.prototype, sig.contract, sig.return_ty)]
+    }
+
+    fn expand_closure(&mut self, def_id: DefId, subst: GenericArgsRef<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Item(def_id, subst);
+        let typing_env = self.typing_env;
+        let ctx = self.ctx;
+        let names = self.namer(dep);
+
+        let name = names.dependency(dep).ident();
+
+        let pre_sig = ctx.sig(def_id).clone().instantiate_and_normalize(ctx, subst, typing_env);
+
+        // Inline the body of closures
+        let mut decls = vec![Decl::Coma(program::to_why(ctx, &names, name, def_id))];
+        if !pre_sig.contract.has_user_contract() {
+            decls.extend(["'pre", "'post'return"].map(|s| {
+                Decl::Meta(Meta {
+                    name: MetaIdent("rewrite_def".into()),
+                    args: Box::new([
+                        MetaArg::Keyword("predicate".into()),
+                        MetaArg::Name(Name::Local(name, Some(why3::Symbol::intern(s)))),
+                    ]),
+                })
+            }))
+        }
+        decls
+    }
+
+    // Generate a body for a constructor closure, of the form
+    //
+    // ```
+    // let c_Some (_1: a) (return (x: option_a)) =
+    //   {inv (Some x)} return {Some x}
+    // ```
+    //
+    // We duplicate the constructor application because it's usually shorter
+    // than writing out the let binding (most constructors used this way have
+    // few fields, and the assertion even goes away if it's trivial).
+    fn expand_ctor(&mut self, def_id: DefId, subst: GenericArgsRef<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Item(def_id, subst);
+        let typing_env = self.typing_env;
+        let ctx = self.ctx;
+        let names = self.namer(dep);
+        let name = names.dependency(dep).ident();
+        let pre_sig = ctx.sig(def_id).clone().instantiate_and_normalize(ctx, subst, typing_env);
+
+        use why3::{coma::Arg, declaration::Attribute};
+        let fields = pre_sig.inputs.iter().map(|(arg, _, _)| Exp::var(arg.0)).collect();
+        let ctor = constructor(&names, fields, ctx.parent(def_id), subst);
+        let body = Expr::App(Expr::var(name::return_()).boxed(), Arg::Term(ctor.clone()).into());
+        // Placeholder for the argument of `inv_call`, to be substituted after lowering.
+        let result = name::result();
+        let invariant =
+            inv_call(ctx, typing_env, names.source_id(), Term::var(result, pre_sig.output));
+        let body = match invariant {
+            None => body,
+            Some(invariant) => {
+                let mut invariant = lower_pure(ctx, &names, &invariant);
+                invariant.subst(&[(result, ctor)].into());
+                let expl = format!("expl:{} type invariant", ctx.item_name(def_id).as_str());
+                let invariant = Exp::Attr(Attribute::Attr(expl), invariant.boxed());
+                Expr::Assert(invariant.boxed(), body.boxed())
+            }
+        };
+
+        let sig = lower_program_sig(ctx, &names, name, &pre_sig, def_id);
+        let prototype =
+            Prototype { attrs: vec![Attribute::Attr("coma:extspec".into())], ..sig.prototype };
+
+        vec![Decl::Coma(Defn { prototype, body })]
+    }
+
+    /// Expand a logical item
+    fn expand_logic(&mut self, def_id: DefId, subst: GenericArgsRef<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Item(def_id, subst);
+        let ctx = self.ctx;
+
+        let mut add_edge = |axiom| self.dep_graph.add_edge(dep, Strength::Weak, axiom);
+        match ctx.intrinsic(def_id) {
+            Intrinsic::Inv => add_edge(Dependency::TyInvAxiom(subst.type_at(0))),
+            Intrinsic::Resolve => add_edge(Dependency::ResolveAxiom(subst.type_at(0))),
+            _ => (),
+        }
+
+        if get_builtin(ctx.tcx, def_id).is_some() {
+            match self.namer.dependency(dep) {
+                Kind::Named(_) => return vec![],
+                Kind::UsedBuiltin(qname) => {
+                    if qname.module.is_empty() {
+                        return vec![];
+                    } else {
+                        return vec![Decl::UseDecls(Box::new([Use {
+                            name: qname.module.clone(),
+                            export: false,
+                        }]))];
+                    }
+                }
+                Kind::Unnamed => unreachable!(),
+            }
+        }
+
+        let typing_env = self.typing_env;
+        let pre_sig = ctx.sig(def_id).clone().instantiate_and_normalize(ctx, subst, typing_env);
+
+        let trait_resol = TraitResolved::resolve_item(self.tcx(), typing_env, def_id, subst);
+        assert_matches!(
+            trait_resol,
+            TraitResolved::NotATraitItem
+            | TraitResolved::Instance { .. } // The default impl is known to be the final instance
+            | TraitResolved::UnknownFound // Unresolved trait method
+            | TraitResolved::BuiltinDyn // This is a logic method on a dyn type. There will be an error message,
+                                        // but we have to handle this for now
+        );
+        // The other case are impossible, because that would mean we are not guaranteed to have an instance
+
+        let opaque = matches!(trait_resol, TraitResolved::UnknownFound | TraitResolved::BuiltinDyn)
+            || !ctx.is_transparent_from(def_id, self.namer.source_id());
+
+        let names = self.namer(dep);
+        let name = names.dependency(dep).ident();
+        let sig = lower_logic_sig(ctx, &names, name, &pre_sig, def_id);
+        let kind = match sig.why_sig.retty {
+            None => DeclKind::Predicate,
+            Some(_) if sig.why_sig.args.is_empty() => DeclKind::Constant,
+            _ => DeclKind::Function,
+        };
+        let mut decls = if !opaque
+            && let Some(term) = term(ctx, &names, def_id, subst, &pre_sig.inputs)
+        {
+            lower_logical_defn(
+                ctx,
+                &names,
+                sig,
+                kind,
+                TermWithTriggers { term: Box::new(term), triggers: pre_sig.contract.indirect_trig },
+                def_id,
+            )
+        } else {
+            let mut decls = val(sig, kind);
+
+            if matches!(
+                ctx.intrinsic(def_id),
+                Intrinsic::Precondition
+                    | Intrinsic::Postcondition
+                    | Intrinsic::PostconditionMut
+                    | Intrinsic::PostconditionOnce
+            ) && let &TyKind::FnDef(did_f, subst_f) = subst.type_at(1).kind()
+            {
+                let subst_f = subst_f.skip_binder();
+                // No definite instance if found for this method, so `term` has returned `None`
+                // However, we still emit an axiom telling that the specification should be a refinement.
+                let args_id = Ident::fresh_local("args").into();
+                let args_tup = Term::var(args_id, subst.type_at(0));
+
+                let res_ty = ctx.normalize_erasing_late_bound_regions(
+                    names.typing_env(),
+                    ctx.fn_sig(did_f).instantiate(ctx.tcx, subst_f).skip_normalization().output(),
+                );
+                let result = name::result().into();
+                let res = Term::var(result, res_ty);
+
+                let mut args = vec![Term::unit(ctx.tcx).coerce(subst.type_at(1)), args_tup.clone()];
+                match ctx.intrinsic(def_id) {
+                    Intrinsic::Precondition => (),
+                    Intrinsic::Postcondition | Intrinsic::PostconditionOnce => {
+                        args.push(res.clone())
+                    }
+                    Intrinsic::PostconditionMut => {
+                        args.extend([Term::unit(ctx.tcx).coerce(subst.type_at(1)), res.clone()])
+                    }
+                    _ => unreachable!(),
+                };
+
+                let call = Term::call(ctx.tcx, typing_env, def_id, subst, args);
+                let trig = [Trigger(Box::new([call.clone()]))];
+
+                if Intrinsic::Precondition.is(ctx, def_id) {
+                    if let Some(pre) = pre_fndef(ctx, &names, did_f, subst_f, args_tup, false) {
+                        let axiom =
+                            pre.implies(call).forall_trig((args_id, subst.type_at(0)), trig);
+                        decls.push(Decl::Axiom(Axiom {
+                            name: Ident::fresh(ctx.crate_name(), "precondition_fndef"),
+                            rewrite: false,
+                            axiom: lower_pure(ctx, &names, &axiom),
+                        }))
+                    }
+                } else if let Some(post) =
+                    post_fndef(ctx, &names, did_f, subst_f, args_tup, res, false)
+                {
+                    let axiom = call.implies(post).quant(
+                        QuantKind::Forall,
+                        Box::new([(args_id, subst.type_at(0)), (result, res_ty)]),
+                        trig,
+                    );
+                    decls.push(Decl::Axiom(Axiom {
+                        name: Ident::fresh(ctx.crate_name(), "postcondition_fndef"),
+                        rewrite: false,
+                        axiom: lower_pure(ctx, &names, &axiom),
+                    }))
+                }
+            }
+
+            decls
+        };
+
+        match ctx.intrinsic(def_id) {
+            Intrinsic::SizeOfLogic => {
+                decls.extend(self.axiom_nonzero_size_of(name, subst.type_at(0)))
+            }
+            _ => {}
+        }
+
+        decls.extend(why3_metas(self.tcx(), def_id, name).map(|m| Decl::Meta(m)));
+        decls
+    }
+
+    /// Generate an axiom `is_sized_logic > 0` if that can be guaranteed and the type does not already
+    /// have a known constant size.
+    fn axiom_nonzero_size_of(&self, name: Ident, ty: Ty<'tcx>) -> Option<Decl> {
+        let size_unknown = self
+            .tcx()
+            .layout_of(ty::PseudoCanonicalInput { typing_env: self.typing_env, value: ty })
+            .is_err();
+        if size_unknown && self.ctx.is_nonzero_sized(self.typing_env, ty) {
+            Some(Decl::Axiom(Axiom {
+                name: Ident::fresh_local(format!("nonzero_{}", name.name().to_string())),
+                rewrite: false,
+                axiom: Exp::BinaryOp(
+                    why3::exp::BinOp::Gt,
+                    Exp::var(name).boxed(),
+                    Exp::int(0).boxed(),
+                ),
+            }))
+        } else {
+            None
+        }
+    }
+
+    /// Constants require some special handling because they can be defined with arbitrary Rust expressions
+    /// which we only know how to translate to Coma, but we also want to be able to use them in logic contexts (Pearlite).
+    ///
+    /// For simple definitions (variables, literals, constructors), we call `try_const_to_term` to translate them
+    /// to a pure Why3 expression as the body of a `constant` declaration.
+    ///
+    /// Otherwise, a constant is translated to a `constant` declaration with no body and a Coma function which we call its "constant setter".
+    /// The constant setter contains the Coma translation of the constant definition. It constructs the value of the constant,
+    /// and performs an *assume* statement that the constructed value is equal to the previously declared constant.
+    /// In the final declaration of each module, we wrap the body with calls to all constant setters.
+    fn expand_constant(&mut self, def_id: DefId, subst: GenericArgsRef<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Item(def_id, subst);
+
+        let typing_env = self.typing_env;
+        let ctx = self.ctx;
+        let trait_resol = TraitResolved::resolve_item(ctx.tcx, typing_env, def_id, subst);
+        let (def_id, subst) = match trait_resol {
+            TraitResolved::Instance { def, .. } => def,
+            TraitResolved::UnknownFound | TraitResolved::NotATraitItem => (def_id, subst),
+            _ => unreachable!(),
+        };
+
+        let mut names = self.namer(dep);
+        let name = names.dependency(dep).ident();
+        let mut pre_sig = ctx.sig(def_id).clone().instantiate_and_normalize(ctx, subst, typing_env);
+        // don't generate setter and don't assume contract if this const is the source_item
+        let is_self = Dependency::Item(def_id, subst) == names.source_item();
+        if is_self {
+            pre_sig.contract.ensures = vec![];
+        }
+        sig_add_type_invariant_spec(ctx, typing_env, names.source_id(), &mut pre_sig, def_id);
+        let sig = lower_logic_sig(ctx, &names, name, &pre_sig, def_id);
+
+        let opaque = is_self
+            || pre_sig.contract.has_user_contract()
+            || pre_sig.contract.const_param()
+            || matches!(trait_resol, TraitResolved::UnknownFound);
+        if opaque {
+            val(sig, DeclKind::Constant)
+        } else if let Some(term) =
+            try_const_to_term(def_id, subst, ctx, typing_env, names.source_id())
+        {
+            lower_logical_defn(
+                ctx,
+                &names,
+                sig,
+                DeclKind::Constant,
+                TermWithTriggers { term: Box::new(term), triggers: pre_sig.contract.indirect_trig },
+                def_id,
+            )
+        } else {
+            // Generate a constant setter.
+            let value_name = Ident::fresh_local("_const");
+            let setter =
+                Ident::fresh_local(crate::naming::ascii_item_name("set_", ctx.tcx, def_id));
+
+            names.register_constant_setter(setter);
+            let mut decls = val(sig, DeclKind::Constant);
+
+            let (def_id, subst) = trait_resol.to_opt(def_id, subst).unwrap();
+            let body = program::why_body(
+                ctx,
+                &mut names,
+                BodyId::from_def_id(def_id),
+                Some(subst),
+                &[],
+                name::return_(),
+                &mut Default::default(),
+            );
+
+            let output = ctx.instantiate_and_normalize_erasing_regions(
+                subst,
+                typing_env,
+                EarlyBinder::bind(ctx.tcx, ctx.sig(def_id).output),
+            );
+            let ty = translate_ty(ctx, &mut names, ctx.def_span(def_id), output);
+            let inner_def = Defn {
+                prototype: Prototype::new(name::return_(), [Param::Term(value_name, ty)]),
+                body: Expr::Assume(
+                    Exp::var(name).eq(Exp::var(value_name)).boxed(),
+                    Expr::var(name::return_()).app([]).boxed(),
+                ),
+            };
+            let body = Expr::Defn(body.boxed(), false, [inner_def].into());
+
+            let prototype =
+                Prototype::new(setter, [Param::Cont(name::return_(), [].into(), [].into())]);
+            decls.push(Decl::Coma(Defn { prototype, body }));
+            decls
+        }
+    }
+
+    fn expand_ty_inv_axiom(&mut self, ty: Ty<'tcx>) -> Vec<Decl> {
+        let root_span = self.root_span;
+        let ctx = self.ctx;
+        let names = self.namer(Dependency::TyInvAxiom(ty));
+        let TyInvDef::Axiom { axiom, rewrite } = elaborate_tyinv_def(ctx, &names, ty, root_span)
+        else {
+            return vec![];
+        };
+        let name = names.dependency(Dependency::TyInvAxiom(ty)).ident();
+        vec![Decl::Axiom(Axiom { name, rewrite, axiom: lower_pure_weakdep(ctx, &names, &axiom) })]
+    }
+
+    fn expand_resolve_axiom(&mut self, ty: Ty<'tcx>) -> Vec<Decl> {
+        let root_span = self.root_span;
+        let ctx = self.ctx;
+        let names = self.namer(Dependency::ResolveAxiom(ty));
+        let ResolveDef::Axiom { axiom, rewrite } =
+            elaborate_resolve_def(ctx, &names, ty, root_span)
+        else {
+            return vec![];
+        };
+        let name = names.dependency(Dependency::ResolveAxiom(ty)).ident();
+        vec![Decl::Axiom(Axiom { name, rewrite, axiom: lower_pure_weakdep(ctx, &names, &axiom) })]
+    }
+
+    fn expand_type(&mut self, ty: Ty<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::Type(ty);
+        let ctx = self.ctx;
+        let names = self.namer(dep);
+        match ty.kind() {
+            TyKind::Param(_) => vec![Decl::TyDecl(TyDecl::Opaque {
+                ty_name: names.ty(ty).to_ident(),
+                ty_params: Box::new([]),
+            })],
+            &TyKind::Alias(
+                rigid,
+                AliasTy {
+                    kind:
+                        kind @ (AliasTyKind::Opaque { def_id } | AliasTyKind::Projection { def_id }),
+                    args,
+                    ..
+                },
+            ) => {
+                let ty_name = if let AliasTyKind::Opaque { .. } = kind {
+                    names.ty_opaque(rigid, def_id, args).to_ident()
+                } else {
+                    names.ty_projection(rigid, def_id, args).to_ident()
+                };
+                vec![Decl::TyDecl(TyDecl::Opaque { ty_name, ty_params: Box::new([]) })]
+            }
+            TyKind::Closure(did, subst) => translate_closure_ty(ctx, &names, *did, subst),
+            TyKind::Adt(_, _) => translate_adtdecl(ctx, &names, ty),
+            TyKind::Tuple(_) => translate_tuple_ty(ctx, &names, ty),
+            TyKind::Dynamic(traits, _) => {
+                if is_logically_dyn_compatible(ctx.tcx(), traits.iter()) {
+                    vec![Decl::TyDecl(TyDecl::Opaque {
+                        ty_name: names.ty(ty).to_ident(),
+                        ty_params: Box::new([]),
+                    })]
+                } else {
+                    ctx.crash_and_error(DUMMY_SP, format!("forbidden dyn type: {} (dyn support is currently minimal, please open an issue to improve this feature)", ty))
+                }
+            }
+            _ => unreachable!("unsupported type: {ty}"),
+        }
+    }
+}
+
+/// Trait bound for which `dyn` is supported by Creusot
+/// (Rust already has a notion of "dyn-compatibility", this is a refinement of that
+/// which we thus call "logical dyn-compatibility".)
+fn is_logically_dyn_compatible<'tcx>(
+    tcx: ty::TyCtxt<'tcx>,
+    traits: impl IntoIterator<Item = ty::Binder<'tcx, ty::ExistentialPredicate<'tcx>>>,
+) -> bool {
+    // dyn is always applied to at most one non-auto trait,
+    // hence we can use `all` to check it if it exists
+    traits.into_iter().all(|b| match b.skip_binder() {
+        ty::ExistentialPredicate::Trait(tr) => is_logically_dyn_compatible_trait(tcx, tr.def_id),
+        _ => true,
+    })
+}
+
+const DYN_COMPATIBLE: LazyCell<HashSet<Box<[&'static str]>>> = LazyCell::new(|| {
+    [
+        ["core", "any", "Any"].into(),
+        ["core", "error", "Error"].into(),
+        ["core", "fmt", "Debug"].into(),
+        ["core", "fmt", "Display"].into(),
+        ["core", "fmt", "Write"].into(),
+        ["std", "io", "Write"].into(),
+    ]
+    .into_iter()
+    .collect()
+});
+
+/// Base trait for which `dyn` is supported by Creusot
+fn is_logically_dyn_compatible_trait<'tcx>(tcx: ty::TyCtxt<'tcx>, tr: DefId) -> bool {
+    // TODO: support more traits
+    let Some(path) = def_path(tcx, tr) else { return false };
+    let path = path.iter().map(|s| s.as_str()).collect::<Box<[&str]>>();
+    DYN_COMPATIBLE.contains(&path)
+}
+
+fn def_path(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Vec<Symbol>> {
+    let mut path = vec![tcx.crate_name(def_id.krate)];
+    for seg in tcx.def_path(def_id).data {
+        match seg.data {
+            rustc_hir::definitions::DefPathData::TypeNs(name) => path.push(name),
+            _ => return None,
+        }
+    }
+    Some(path)
+}
+
+impl<'a, 'ctx, 'tcx> Expander<'a, 'ctx, 'tcx> {
+    fn expand_dyn_cast(&mut self, source: Ty<'tcx>, target: Ty<'tcx>) -> Vec<Decl> {
+        let dep = Dependency::DynCast(source, target);
+        let ctx = self.ctx;
+        let names = self.namer(dep);
+        let sig = Signature {
+            name: names.dependency(dep).ident(),
+            attrs: vec![],
+            retty: Some(translate_ty(ctx, &names, DUMMY_SP, target)),
+            args: [(Ident::fresh_local("x"), translate_ty(ctx, &names, DUMMY_SP, source))].into(),
+        };
+        vec![Decl::LogicDecl(LogicDecl { kind: Some(DeclKind::Function), sig })]
+    }
+
+    /// # Parameters
+    ///
+    /// `span`: span of the item being expanded
+    pub(crate) fn new(
+        ctx: &'a Why3Generator<'tcx>,
+        namer: &'a mut ModuleContext<'ctx, 'tcx>,
+        dep_graph: DepGraphBuilder<'tcx>,
+        typing_env: TypingEnv<'tcx>,
+        span: Span,
+    ) -> Self {
+        Self { namer, ctx, typing_env, dep_graph, dep_bodies: Default::default(), root_span: span }
+    }
+
+    fn namer(&mut self, source: Dependency<'tcx>) -> ExpansionProxy<'_, 'ctx, 'tcx> {
+        ExpansionProxy { namer: self.namer, dep_graph: RefCell::new(&mut self.dep_graph), source }
+    }
+
+    /// Expand the graph with new entries
+    pub fn build_graph(mut self) -> (super::DepGraph<'tcx>, HashMap<Dependency<'tcx>, Vec<Decl>>) {
+        while let Some(t) = self.dep_graph.expansion_queue.pop_front() {
+            self.expand(t);
+        }
+        (self.dep_graph.graph, self.dep_bodies)
+    }
+
+    fn expand(&mut self, dep: Dependency<'tcx>) {
+        let ctx = self.ctx;
+        self.expand_laws(dep);
+
+        let decls = match dep {
+            Dependency::Type(ty) => self.expand_type(ty),
+            Dependency::PrivateFields(_, _) => {
+                let ty_name = self.namer.dependency(dep).ident();
+                vec![Decl::TyDecl(TyDecl::Opaque { ty_name, ty_params: Box::new([]) })]
+            }
+            Dependency::Item(def_id, subst) => match ctx.item_type(def_id) {
+                ItemType::Logic { .. } => self.expand_logic(def_id, subst),
+                ItemType::Constant => self.expand_constant(def_id, subst),
+                ItemType::Field | ItemType::Variant => {
+                    self.namer(dep).ty_adt(ctx.parent(def_id), subst);
+                    vec![]
+                }
+                ItemType::Program => self.expand_program(def_id, subst),
+                ItemType::Closure => self.expand_closure(def_id, subst),
+                ItemType::CtorFn => self.expand_ctor(def_id, subst),
+                item_type => {
+                    let path = ctx.def_path_str(def_id);
+                    let self_path = ctx.def_path_str(self.namer.source_id());
+                    ctx.crash_and_error(self.root_span, format!("expanding {path:?} failed because of unexpected kind {item_type:?} while translating {self_path:?}"))
+                }
+            },
+            Dependency::TyInvAxiom(ty) => self.expand_ty_inv_axiom(ty),
+            Dependency::ResolveAxiom(ty) => self.expand_resolve_axiom(ty),
+            Dependency::ClosureAccessor(_, _, _) | Dependency::TupleField(_, _) => vec![],
+            Dependency::PreMod(b) => {
+                vec![Decl::UseDecls(Box::new([Use {
+                    name: self.namer.prelude_module_name(b),
+                    export: false,
+                }]))]
+            }
+            Dependency::Eliminator(def_id, subst) => {
+                vec![eliminator(ctx, &self.namer(dep), def_id, subst)]
+            }
+            Dependency::DynCast(source, target) => self.expand_dyn_cast(source, target),
+            Dependency::PrivateResolve(def_id, subst) | Dependency::PrivateTyInv(def_id, subst) => {
+                let namer = self.namer(dep);
+                let sig = Signature {
+                    name: namer.dependency(dep).ident(),
+                    attrs: vec![],
+                    retty: None,
+                    args: Box::new([(
+                        Ident::fresh_local("x"),
+                        Type::TConstructor(Name::local(namer.private_fields(def_id, subst))),
+                    )]),
+                };
+                vec![Decl::predicate(sig, None)]
+            }
+        };
+
+        self.dep_bodies.insert(dep, decls);
+    }
+}
+
+fn traitref_of_item<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    did: DefId,
+    subst: GenericArgsRef<'tcx>,
+) -> Option<TraitRef<'tcx>> {
+    let ai = tcx.opt_associated_item(did)?;
+    let cont = ai.container_id(tcx);
+    let subst = tcx.mk_args_from_iter(subst.iter().take(tcx.generics_of(cont).count()));
+
+    if tcx.def_kind(cont) == DefKind::Trait {
+        return Some(TraitRef::new(tcx, cont, subst));
+    }
+
+    let trait_ref = tcx.impl_opt_trait_ref(cont)?.instantiate(tcx, subst);
+    Some(tcx.normalize_erasing_regions(typing_env, trait_ref))
+}
+
+impl<'a, 'ctx, 'tcx> Expander<'a, 'ctx, 'tcx> {
+    fn expand_laws(&mut self, dep: Dependency<'tcx>) {
+        let Some((item_did, item_subst)) = dep.did() else {
+            return;
+        };
+
+        let Some(item_ai) = self.ctx.opt_associated_item(item_did) else { return };
+        let item_container = item_ai.container_id(self.tcx());
+
+        if Intrinsic::FnExt.is(self.ctx, item_container)
+            || Intrinsic::FnMutExt.is(self.ctx, item_container)
+            || Intrinsic::FnOnceExt.is(self.ctx, item_container)
+        {
+            let ty = item_subst.type_at(1);
+            if ty.is_closure()
+                || ty.is_box()
+                || ty.is_ref()
+                || matches!(ty.kind(), TyKind::Adt(def, _) if Intrinsic::FnGhostWrapper.is(self.ctx, def.did()))
+                || matches!(ty.kind(), TyKind::FnDef(_, _))
+            {
+                // For buitin implementations of FnOnce/FnMut/Fn, we do not exand laws.
+                return;
+            }
+        }
+
+        // Dont clone laws into the trait / impl which defines them.
+        if let Some(tr_item) = traitref_of_item(self.tcx(), self.typing_env, item_did, item_subst)
+            && let Some(tr_self) = traitref_of_item(
+                self.tcx(),
+                self.typing_env,
+                self.namer.source_id(),
+                self.namer.source_subst(),
+            )
+            && tr_item == tr_self
+        {
+            return;
+        }
+
+        for &law in self.ctx.laws(item_container) {
+            let (def, args) =
+                TraitResolved::resolve_item(self.tcx(), self.typing_env, law, item_subst)
+                    .to_opt(law, item_subst)
+                    .unwrap();
+            // The lemma may be a law at the trait level but not at the impl level.
+            if is_law(self.tcx(), def) {
+                // We add a weak dep from `dep` to make sure it appears close to the triggering item
+                self.dep_graph.add_edge(dep, Strength::Weak, Dependency::Item(def, args));
+            }
+        }
+    }
+}
+
+fn val(mut sig: LogicSignature, kind: DeclKind) -> Vec<Decl> {
+    if let None = sig.why_sig.retty
+        && let DeclKind::Constant = kind
+    {
+        sig.why_sig.retty = Some(backend::ty::bool());
+    }
+    let mut d = spec_axioms(&sig).collect::<Vec<_>>();
+    d.insert(0, Decl::LogicDecl(LogicDecl { kind: Some(kind), sig: sig.why_sig }));
+    d
+}
+
+/// Generate body of `postcondition_once`
+fn postcondition_once_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let typing_env = names.typing_env();
+    let &[self_, args, result] = inputs else {
+        unreachable!(
+            "postcondition_once must have 3 arguments. This should not happen. Found: {inputs:?}"
+        )
+    };
+    assert_eq!(result.0.0, name::result());
+    let self_ = Term::var(self_.0, self_.2);
+    let args = Term::var(args.0, args.2);
+    let res = Term::var(result.0, result.2);
+    match self_.ty.kind() {
+        TyKind::Closure(did, _) => {
+            Some(closure_post(ctx, ClosureKind::FnOnce, did.expect_local(), self_, args, None))
+        }
+        // Handle `FnGhostWrapper`
+        TyKind::Adt(def, subst_inner) if Intrinsic::FnGhostWrapper.is(ctx, def.did()) => {
+            let mut subst_postcond = subst.to_vec();
+            let closure_ty =
+                names.normalize(def.all_fields().next().unwrap().ty(ctx.tcx, subst_inner));
+            subst_postcond[1] = GenericArg::from(closure_ty);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionOnce.get(ctx);
+            let post_args = [self_.proj(0usize.into(), closure_ty), args, res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::Ref(_, cl, Mutability::Mut) => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(*cl);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionMut.get(ctx);
+            let post_args = [self_.clone().cur(), args, self_.fin(), res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::Ref(_, cl, Mutability::Not) => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(*cl);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            let post_args = [self_.coerce(*cl), args, res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::Adt(def, bsubst) if def.is_box() => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = bsubst[0];
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionOnce.get(ctx);
+            let post_args = [self_.coerce(bsubst.type_at(0)), args, res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::FnDef(..) => {
+            let post_args = [self_, args, res];
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst, post_args))
+        }
+        _ => None,
+    }
+}
+
+/// Generate body of `postcondition_mut`
+fn postcondition_mut_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let typing_env = names.typing_env();
+    let &[self_, args, result_state, result] = inputs else {
+        unreachable!(
+            "postcondition_mut must have 4 arguments. This should not happen. Found: {inputs:?}"
+        )
+    };
+    assert_eq!(result.0.0, name::result());
+    let self_ = Term::var(self_.0, self_.2);
+    let args = Term::var(args.0, args.2);
+    let result_state = Term::var(result_state.0, result_state.2);
+    let res = Term::var(result.0, result.2);
+    match self_.ty.kind() {
+        TyKind::Closure(did, _) => Some(closure_post(
+            ctx,
+            ClosureKind::FnMut,
+            did.expect_local(),
+            self_,
+            args,
+            Some(result_state),
+        )),
+        // Handle `FnGhostWrapper`
+        TyKind::Adt(def, subst_inner) if Intrinsic::FnGhostWrapper.is(ctx, def.did()) => {
+            let mut subst_postcond = subst.to_vec();
+            let closure_ty =
+                names.normalize(def.all_fields().next().unwrap().ty(ctx.tcx, subst_inner));
+            subst_postcond[1] = GenericArg::from(closure_ty);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionMut.get(ctx);
+            let post_args = [
+                self_.clone().proj(0usize.into(), closure_ty),
+                args,
+                result_state.clone().proj(0usize.into(), closure_ty),
+                res,
+            ];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::Ref(_, cl, Mutability::Mut) => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(*cl);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionMut.get(ctx);
+            let post_args = [self_.clone().cur(), args, result_state.clone().cur(), res];
+            Some(
+                Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args)
+                    .conj(self_.fin().eq(ctx.tcx, result_state.fin())),
+            )
+        }
+        TyKind::Ref(_, cl, Mutability::Not) => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(*cl);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_args = [self_.clone().coerce(*cl), args, res];
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            Some(
+                Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args)
+                    .conj(self_.eq(ctx.tcx, result_state)),
+            )
+        }
+        TyKind::Adt(def, bsubst) if def.is_box() => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = bsubst[0];
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::PostconditionMut.get(ctx);
+            let closure_ty = bsubst.type_at(0);
+            let post_args = [self_.coerce(closure_ty), args, result_state.coerce(closure_ty), res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::FnDef(..) => {
+            let post_args = [self_, args, res];
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst, post_args))
+        }
+        _ => None,
+    }
+}
+
+/// Generate body of `postcondition`
+fn postcondition_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let typing_env = names.typing_env();
+    let &[self_, args, result] = inputs else {
+        unreachable!(
+            "postcondition must have 3 arguments. This should not happen. Found: {inputs:?}"
+        )
+    };
+    assert_eq!(result.0.0, name::result());
+    let self_ = Term::var(self_.0, self_.2);
+    let args = Term::var(args.0, args.2);
+    let res = Term::var(result.0, result.2);
+    match self_.ty.kind() {
+        TyKind::Closure(did, _) => {
+            Some(closure_post(ctx, ClosureKind::Fn, did.expect_local(), self_, args, None))
+        }
+        // Handle `FnGhostWrapper`
+        TyKind::Adt(def, subst_inner) if Intrinsic::FnGhostWrapper.is(ctx, def.did()) => {
+            let closure_ty =
+                names.normalize(def.all_fields().next().unwrap().ty(ctx.tcx, subst_inner));
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(closure_ty);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            let post_args = [self_.proj(0usize.into(), closure_ty), args, res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        &TyKind::Ref(_, cl, Mutability::Not) => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = GenericArg::from(cl);
+            let subst_postcond = ctx.tcx.mk_args(&subst_postcond);
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            let post_args = [self_.clone().coerce(cl), args, res];
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        TyKind::Adt(def, bsubst) if def.is_box() => {
+            let mut subst_postcond = subst.to_vec();
+            subst_postcond[1] = bsubst[0];
+            let subst_postcond = ctx.tcx.mk_args(&subst_postcond);
+            let post_args = [self_.coerce(bsubst.type_at(0)), args, res];
+            let post_fn = Intrinsic::Postcondition.get(ctx);
+            Some(Term::call(ctx.tcx, typing_env, post_fn, subst_postcond, post_args))
+        }
+        &TyKind::FnDef(did, subst) if let DefKind::Ctor(..) = ctx.def_kind(did) => {
+            Some(ctor_post(ctx, names.source_id(), did, subst.skip_binder(), args, res))
+        }
+        &TyKind::FnDef(did, subst) => {
+            post_fndef(ctx, names, did, subst.skip_binder(), args, res, true)
+        }
+        _ => None,
+    }
+}
+
+fn post_fndef<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    mut did: DefId,
+    mut subst: GenericArgsRef<'tcx>,
+    args: Term<'tcx>,
+    res: Term<'tcx>,
+    exact: bool,
+) -> Option<Term<'tcx>> {
+    match TraitResolved::resolve_item(ctx.tcx, names.typing_env(), did, subst) {
+        TraitResolved::Instance { def, .. } => (did, subst) = def,
+        TraitResolved::BuiltinClone => {
+            let TyKind::Tuple(argsty) = args.ty.kind() else { unreachable!() };
+            assert_eq!((did, argsty.len()), (ctx.lang_items().clone_fn().unwrap(), 1));
+            let arg = args.proj(0usize.into(), argsty[0]);
+            let posts = builtin_clone_posts(ctx, names.typing_env(), arg.deref(), res);
+            return Some(posts.into_iter().fold(Term::true_(ctx.tcx), Term::conj));
+        }
+        TraitResolved::UnknownFound if exact => return None,
+        TraitResolved::UnknownFound
+        | TraitResolved::NotATraitItem
+        | TraitResolved::BuiltinFn
+        | TraitResolved::BuiltinDyn => (),
+        TraitResolved::NoInstance(..) => unreachable!(),
+    }
+
+    if is_logic(ctx.tcx, did) {
+        return None;
+    }
+
+    let mut sig = ctx.sig(did).clone().instantiate_and_normalize(ctx, subst, names.typing_env());
+    sig_add_type_invariant_spec(ctx, names.typing_env(), names.source_id(), &mut sig, did);
+    let post = sig.contract.ensures_conj(ctx.tcx);
+    let pattern = Pattern::tuple(
+        sig.inputs.iter().map(|&(nm, span, ty)| Pattern::binder_sp(nm, span, ty)),
+        args.ty,
+    );
+    Some(Term::let_(pattern, args, post, ctx.def_span(did)))
+}
+
+/// Generate body of `precondition` for `FnOnce` closures.
+fn precondition_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let typing_env = names.typing_env();
+    let &[self_, args] = inputs else {
+        unreachable!(
+            "precondition must have 2 arguments. This should not happen. Found: {inputs:?}"
+        )
+    };
+    let self_ = Term::var(self_.0, self_.2);
+    let args = Term::var(args.0, args.2);
+    match self_.ty.kind() {
+        TyKind::Closure(did, _) => {
+            Some(closure_pre(ctx, names.source_id(), did.expect_local(), self_, args))
+        }
+        &TyKind::Ref(_, cl, m) => {
+            let mut subst_pre = subst.to_vec();
+            subst_pre[1] = GenericArg::from(cl);
+            let subst_pre = ctx.mk_args(&subst_pre);
+            let self_ = if m == Mutability::Mut { self_.clone().cur() } else { self_.coerce(cl) };
+            let pre_fn = Intrinsic::Precondition.get(ctx);
+            let pre_args = [self_, args];
+            Some(Term::call(ctx.tcx, typing_env, pre_fn, subst_pre, pre_args))
+        }
+        TyKind::Adt(def, bsubst) if def.is_box() => {
+            let mut subst_pre = subst.to_vec();
+            subst_pre[1] = bsubst[0];
+            let subst_pre = ctx.mk_args(&subst_pre);
+            let pre_fn = Intrinsic::Precondition.get(ctx);
+            let pre_args = [self_.coerce(bsubst.type_at(0)), args];
+            Some(Term::call(ctx.tcx, typing_env, pre_fn, subst_pre, pre_args))
+        }
+        // Handle `FnGhostWrapper`
+        TyKind::Adt(def, subst_inner) if Intrinsic::FnGhostWrapper.is(ctx, def.did()) => {
+            let mut subst_postcond = subst.to_vec();
+            let closure_ty =
+                names.normalize(def.all_fields().next().unwrap().ty(ctx.tcx, subst_inner));
+            subst_postcond[1] = GenericArg::from(closure_ty);
+            let subst_postcond = ctx.mk_args(&subst_postcond);
+            let pre_fn = Intrinsic::Precondition.get(ctx);
+            let pre_args = [self_.proj(0usize.into(), closure_ty), args];
+            Some(Term::call(ctx.tcx, typing_env, pre_fn, subst_postcond, pre_args))
+        }
+        &TyKind::FnDef(did, subst) if let DefKind::Ctor(..) = ctx.def_kind(did) => {
+            Some(ctor_pre(ctx, names.source_id(), did, subst.skip_binder(), args))
+        }
+        &TyKind::FnDef(did, subst) => pre_fndef(ctx, names, did, subst.skip_binder(), args, true),
+        _ => None,
+    }
+}
+
+fn pre_fndef<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    mut did: DefId,
+    mut subst: GenericArgsRef<'tcx>,
+    args: Term<'tcx>,
+    exact: bool,
+) -> Option<Term<'tcx>> {
+    match TraitResolved::resolve_item(ctx.tcx, names.typing_env(), did, subst) {
+        TraitResolved::Instance { def, .. } => (did, subst) = def,
+        TraitResolved::UnknownFound if exact => return None,
+        TraitResolved::UnknownFound
+        | TraitResolved::NotATraitItem
+        | TraitResolved::BuiltinClone
+        | TraitResolved::BuiltinFn
+        | TraitResolved::BuiltinDyn => (),
+        TraitResolved::NoInstance(..) => unreachable!(),
+    }
+
+    if is_logic(ctx.tcx, did) {
+        // This is especially important for Snapshot::deref, which should keep have a false
+        // precondition if called in a program via a generic.
+        return None;
+    }
+
+    let mut sig = ctx.sig(did).clone().instantiate_and_normalize(ctx, subst, names.typing_env());
+
+    sig_add_type_invariant_spec(ctx, names.typing_env(), names.source_id(), &mut sig, did);
+    let pre = sig.contract.requires_conj(ctx.tcx);
+    let pattern = Pattern::tuple(
+        sig.inputs.iter().map(|&(nm, span, ty)| Pattern::binder_sp(nm, span, ty)),
+        args.ty,
+    );
+
+    Some(Term::let_(pattern, args, pre, ctx.def_span(did)))
+}
+
+fn fn_mut_hist_inv_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let &[self_, future] = inputs else {
+        unreachable!("hist_inv must have 2 arguments. This should not happen. Found: {inputs:?}")
+    };
+    let self_ = Term::var(self_.0, self_.2);
+    let future = Term::var(future.0, future.2);
+    match self_.ty.kind() {
+        TyKind::Closure(did, _) => Some(closure_hist_inv(ctx, did.expect_local(), self_, future)),
+        TyKind::Ref(_, _, Mutability::Not) => Some(self_.eq(ctx.tcx, future)),
+        TyKind::Ref(_, cl, Mutability::Mut) => {
+            let hist_inv = Intrinsic::HistInv.get(ctx);
+            let mut subst_hist_inv = subst.to_vec();
+            subst_hist_inv[1] = GenericArg::from(*cl);
+            let subst_hist_inv = ctx.mk_args(&subst_hist_inv);
+            let hist_inv_args = [self_.clone().cur(), future.clone().cur()];
+            Some(
+                Term::call(ctx.tcx, typing_env, hist_inv, subst_hist_inv, hist_inv_args)
+                    .conj(self_.fin().eq(ctx.tcx, future.fin())),
+            )
+        }
+        TyKind::Adt(def, bsubst) if def.is_box() => {
+            let hist_inv = Intrinsic::HistInv.get(ctx);
+            let mut subst_hist_inv = subst.to_vec();
+            subst_hist_inv[1] = bsubst[0];
+            let subst_hist_inv = ctx.mk_args(&subst_hist_inv);
+            let closure_ty = bsubst.type_at(0);
+            let hist_inv_args = [self_.coerce(closure_ty), future.coerce(closure_ty)];
+            Some(Term::call(ctx.tcx, typing_env, hist_inv, subst_hist_inv, hist_inv_args))
+        }
+        TyKind::FnDef(_, _) => Some(Term::true_(ctx.tcx)),
+        _ => None,
+    }
+}
+
+/// Special definition for `::creusot_std::std::mem::size_of_logic`.
+///
+/// The specification of sizes is documented at [`size_of`].
+/// Note: at this point we are guaranteed to have a `Sized` type.
+///
+/// [`size_of`]: https://doc.rust-lang.org/std/mem/fn.size_of.html
+fn size_of_logic_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    size_of_logic_id: DefId,
+    ty: Ty<'tcx>,
+) -> Option<Term<'tcx>> {
+    use rustc_type_ir::TyKind::*;
+    if let Ok(layout) = ctx.tcx.layout_of(ty::PseudoCanonicalInput { typing_env, value: ty }) {
+        // Rustc has computed a concrete size for this type. Just use it.
+        // This handles at least primitive types, references, pointers, and ZSTs.
+        return Some(Term::int(ctx.int_ty(), layout.size.bytes() as i128));
+    }
+    match ty.kind() {
+        Array(t, n) => size_of_array(ctx, typing_env, size_of_logic_id, *t, n),
+        _ => None, // TODO: Adts that are repr(C)
+    }
+}
+
+fn size_of_array<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    size_of_logic_id: DefId,
+    ty: Ty<'tcx>,
+    n: &Const<'tcx>,
+) -> Option<Term<'tcx>> {
+    let n = match n.kind() {
+        ConstKind::Value(v) => match *v.valtree {
+            ty::ValTreeKind::Leaf(scalar) => scalar.to_target_usize(ctx.tcx) as i128,
+            ty::ValTreeKind::Branch(_) => return None,
+        },
+        // TODO: ConstKind::Param
+        _ => return None,
+    };
+    let subst = ctx.mk_args(&[ty.into()]);
+    let item_size = Term::call(ctx.tcx, typing_env, size_of_logic_id, subst, []);
+    Some(item_size.bin_op(ctx.int_ty(), BinOp::Mul, Term::int(ctx.int_ty(), n)))
+}
+
+fn size_of_val_logic_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let param = subst.type_at(0);
+    if param.is_sized(ctx.tcx, names.typing_env()) {
+        let size_of_val_logic_sized = Intrinsic::SizeOfValLogicSized.get(ctx);
+        let rnm = &renaming_params(ctx, size_of_val_logic_sized, inputs);
+        return term(ctx, names, size_of_val_logic_sized, subst, inputs).subst(rnm);
+    }
+    match param.kind() {
+        TyKind::Slice(ty) => {
+            let size_of_val_logic_slice = Intrinsic::SizeOfValLogicSlice.get(ctx);
+            let rnm = &renaming_params(ctx, size_of_val_logic_slice, inputs);
+            term(ctx, names, size_of_val_logic_slice, ctx.mk_args(&[(*ty).into()]), inputs)
+                .subst(rnm)
+        }
+        TyKind::Str => {
+            let size_of_val_logic_str = Intrinsic::SizeOfValLogicStr.get(ctx);
+            let rnm = &renaming_params(ctx, size_of_val_logic_str, inputs);
+            term(ctx, names, size_of_val_logic_str, ctx.mk_args(&[]), inputs).subst(rnm)
+        }
+        _ => None,
+    }
+}
+
+fn align_of_logic_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    align_of_logic_id: DefId,
+    ty: Ty<'tcx>,
+) -> Option<Term<'tcx>> {
+    use rustc_type_ir::TyKind::*;
+    if let Ok(layout) = ctx.tcx.layout_of(ty::PseudoCanonicalInput { typing_env, value: ty }) {
+        // Rustc has computed a concrete size for this type. Just use it.
+        // This handles at least primitive types, references, pointers, and ZSTs.
+        return Some(Term::int(ctx.int_ty(), layout.align.bytes() as i128));
+    }
+    match ty.kind() {
+        Array(t, _) => {
+            let subst = ctx.mk_args(&[(*t).into()]);
+            let align_of_item = Term::call(ctx.tcx, typing_env, align_of_logic_id, subst, []);
+            Some(align_of_item)
+        }
+        _ => None, // TODO: Adts that are repr(C)
+    }
+}
+
+fn is_aligned_logic_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    ty: Ty<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    use rustc_type_ir::TyKind::*;
+    if ty.is_sized(ctx.tcx, names.typing_env()) {
+        let is_aligned_logic_sized = Intrinsic::IsAlignedLogicSized.get(ctx);
+        let rnm = &renaming_params(ctx, is_aligned_logic_sized, inputs);
+        return term(ctx, names, is_aligned_logic_sized, ctx.mk_args(&[ty.into()]), inputs)
+            .subst(rnm);
+    }
+    match ty.kind() {
+        Slice(t) => {
+            let is_aligned_logic_slice = Intrinsic::IsAlignedLogicSlice.get(ctx);
+            let rnm = &renaming_params(ctx, is_aligned_logic_slice, inputs);
+            term(ctx, names, is_aligned_logic_slice, ctx.mk_args(&[(*t).into()]), inputs).subst(rnm)
+        }
+        Str => Some(Term::true_(ctx.tcx)),
+        _ => None,
+    }
+}
+
+fn metadata_matches_term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    //// The type arguments of `metadata_matches`
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let param = subst.type_at(0);
+    if param.is_sized(ctx.tcx, names.typing_env()) {
+        Some(Term::true_(ctx.tcx))
+    } else if let TyKind::Slice(ty) = param.kind() {
+        let metadata_matches_slice = Intrinsic::MetadataMatchesSlice.get(ctx);
+        let rnm = &renaming_params(ctx, metadata_matches_slice, inputs);
+        term(ctx, names, metadata_matches_slice, ctx.mk_args(&[(*ty).into()]), inputs).subst(rnm)
+    } else if let TyKind::Str = param.kind() {
+        let metadata_matches_str = Intrinsic::MetadataMatchesStr.get(ctx);
+        let rnm = &renaming_params(ctx, metadata_matches_str, inputs);
+        term(ctx, names, metadata_matches_str, ctx.mk_args(&[]), inputs).subst(rnm)
+    } else {
+        None
+    }
+}
+
+fn renaming_params<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    from: DefId,
+    to: &[(PIdent, Span, Ty<'tcx>)],
+) -> HashMap<Ident, Ident> {
+    let from = ctx.inputs_and_output(from).0;
+    from.iter().zip(to).map(|((x, _, _), (y, _, _))| (x.0, y.0)).collect()
+}
+
+/// Returns a resolved and normalized term for a dependency.
+///
+/// Currently, it does not handle invariant axioms but otherwise returns all logical terms.
+///
+/// The term will use argument names from `ctx.ctx.inputs_and_output(def_id)`.
+fn term<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    def_id: DefId,
+    subst: GenericArgsRef<'tcx>,
+    inputs: &[(PIdent, Span, Ty<'tcx>)],
+) -> Option<Term<'tcx>> {
+    let typing_env = names.typing_env();
+    match ctx.intrinsic(def_id) {
+        Intrinsic::Resolve => {
+            if let ResolveDef::Body(body) =
+                elaborate_resolve_def(ctx, names, subst.type_at(0), ctx.def_span(names.source_id()))
+            {
+                Some(body)
+            } else {
+                None
+            }
+        }
+        Intrinsic::Inv => {
+            if let TyInvDef::Body(body) =
+                elaborate_tyinv_def(ctx, names, subst.type_at(0), ctx.def_span(names.source_id()))
+            {
+                Some(body)
+            } else {
+                None
+            }
+        }
+        Intrinsic::StructuralResolve => structural_resolve(
+            ctx,
+            names,
+            Term::var(inputs[0].0, inputs[0].2),
+            ctx.def_span(names.source_id()),
+        )
+        .ok(),
+        Intrinsic::PostconditionOnce => postcondition_once_term(ctx, names, subst, inputs),
+        Intrinsic::PostconditionMut => postcondition_mut_term(ctx, names, subst, inputs),
+        Intrinsic::Postcondition => postcondition_term(ctx, names, subst, inputs),
+        Intrinsic::Precondition => precondition_term(ctx, names, subst, inputs),
+        Intrinsic::HistInv => fn_mut_hist_inv_term(ctx, typing_env, subst, inputs),
+        Intrinsic::SizeOfLogic => size_of_logic_term(ctx, typing_env, def_id, subst.type_at(0)),
+        Intrinsic::SizeOfValLogic => size_of_val_logic_term(ctx, names, subst, inputs),
+        Intrinsic::AlignOfLogic => align_of_logic_term(ctx, typing_env, def_id, subst.type_at(0)),
+        Intrinsic::IsAlignedLogic => is_aligned_logic_term(ctx, names, subst.type_at(0), inputs),
+        Intrinsic::MetadataMatches => metadata_matches_term(ctx, names, subst, inputs),
+        _ => {
+            let term = EarlyBinder::bind(ctx.tcx, ctx.logic_term(def_id).unwrap().clone());
+            Some(normalize(ctx, typing_env, term.instantiate(ctx.tcx, subst).skip_normalization()))
+        }
+    }
+}

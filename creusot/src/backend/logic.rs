@@ -1,0 +1,251 @@
+use crate::{
+    backend::{
+        Why3Generator, common_meta_decls,
+        logic::vcgen::{SelfCall, wp},
+        signature::{LogicSignature, lower_logic_sig},
+        term::{lower_pure, lower_pure_weakdep, lower_trigger},
+        ty::{self, translate_ty},
+    },
+    contracts_items::{Intrinsic, get_builtin, indirect_witness_name, is_inline, is_opaque},
+    ctx::*,
+    naming::name,
+    translated_item::FileModule,
+    translation::pearlite::TermWithTriggers,
+};
+use rustc_hir::def_id::DefId;
+use why3::{
+    Name,
+    declaration::*,
+    exp::{BinOp, Exp, Trigger},
+};
+
+pub mod vcgen;
+
+pub(crate) fn translate_logic(ctx: &Why3Generator, def_id: DefId) -> Option<FileModule> {
+    let names = Dependencies::new(ctx, def_id);
+    names.visit_source();
+    let pre_sig = ctx.sig(def_id).clone().normalize_contract(ctx, ctx.typing_env(def_id));
+
+    // FIXME: this corresponds to not checking the contract in logic functions
+    // that are not recursive and that do not have any contract.
+    // This is not unsound, but somewhat surprising.
+    // However, enabling this causes large performance issues (because the VCGen is not optimized,
+    // it should be written in Flanagan-Saxe style) and all sorts of tests need to be adapted.
+    if pre_sig.contract.is_empty() {
+        return None;
+    }
+
+    if get_builtin(ctx.tcx, def_id).is_some() {
+        if !pre_sig.contract.is_empty() {
+            ctx.crash_and_error(
+                ctx.def_span(def_id),
+                "cannot specify both `creusot::builtin` and a contract on the same definition",
+            );
+        }
+        return None;
+    }
+
+    if !ctx.has_body(def_id)
+        || ctx.intrinsic(def_id).synthetic()
+        || pre_sig.contract.is_empty() && is_opaque(ctx.tcx, def_id)
+    {
+        return None;
+    }
+
+    let name = names.source_ident();
+    let (mut body_decls, args_names): (Vec<_>, Vec<_>) = pre_sig
+        .inputs
+        .iter()
+        .map(|&(name, span, ty)| {
+            let name = name.0;
+            let decl = Decl::LogicDecl(LogicDecl {
+                kind: Some(DeclKind::Constant),
+                sig: Signature {
+                    name,
+                    attrs: vec![],
+                    retty: Some(translate_ty(ctx, &names, span, ty)),
+                    args: Box::new([]),
+                },
+            });
+            (decl, name)
+        })
+        .unzip();
+    let sig = lower_logic_sig(ctx, &names, name, &pre_sig, def_id);
+
+    let val_decl = {
+        let sig = sig.why_sig.clone();
+        match ctx.item_type(def_id) {
+            ItemType::Logic { .. } => {
+                let kind = if sig.retty == None {
+                    Some(DeclKind::Predicate)
+                } else {
+                    Some(DeclKind::Function)
+                };
+                LogicDecl { sig, kind }
+            }
+            ItemType::Program | ItemType::Closure => LogicDecl { sig, kind: None },
+            ItemType::Constant => LogicDecl { sig, kind: Some(DeclKind::Constant) },
+            _ => unreachable!(),
+        }
+    };
+    body_decls.push(Decl::LogicDecl(val_decl));
+
+    let postcondition = sig.contract.ensures_conj(&name.name().to_string());
+
+    let term = ctx.ctx.logic_term(def_id).unwrap();
+    let k = |exp| Exp::let_id(name::result(), exp, postcondition.clone());
+    let wp = if let Some(wp) = wp(
+        ctx,
+        &names,
+        Some(SelfCall { id: def_id, args: args_names, variant: sig.variant.clone() }),
+        term,
+        true,
+        &k,
+    ) {
+        wp
+    } else {
+        k(lower_pure(ctx, &names, term))
+    };
+    if wp.is_true() {
+        return None;
+    }
+
+    let vc_ident = sig.why_sig.name.refresh_with(|s| format!("vc_{s}"));
+
+    let (mut decls, setters) = names.translate_deps(ctx);
+    decls.extend(common_meta_decls());
+    decls.extend(body_decls);
+    let requires = sig.contract.requires.into_iter().map(|cond| cond.exp);
+    decls.push(setters.mk_goal(vc_ident, vec![], requires, wp));
+
+    let attrs = ctx.span_attr(ctx.def_span(def_id)).into_iter().collect();
+    let meta = ctx.display_impl_of(def_id);
+    let path = ctx.module_path(def_id);
+    let name = path.why3_ident();
+    Some(FileModule { path, modl: Module { name, decls: decls.into(), attrs, meta } })
+}
+
+/// Translate a logical term to why3.
+pub(crate) fn lower_logical_defn<'tcx>(
+    ctx: &Why3Generator<'tcx>,
+    names: &impl Namer<'tcx>,
+    sig: LogicSignature,
+    kind: DeclKind,
+    body: TermWithTriggers<'tcx>,
+    def_id: DefId,
+) -> Vec<Decl> {
+    let mut decls = vec![];
+    let inline = is_inline(ctx.tcx, def_id);
+    let indirect = indirect_witness_name(ctx.tcx, def_id).is_some();
+    let triggers = body.triggers;
+    let body = *body.term;
+
+    // We don't pull dependencies for FnDef items, because it may be more private than
+    // the definition is transparent
+    let body = lower_pure_weakdep(ctx, names, &body.spanned());
+
+    if sig.variant.is_none() && !indirect {
+        let mut sig = sig.why_sig.clone();
+        let mut meta_decl = None;
+
+        if inline {
+            sig.attrs.push(Attribute::Attr("inline:trivial".into()));
+        }
+
+        // Special case: we want the pre-/post- of closures to be unfolded by compute_specified
+        // but not inined when sent to SMT solvers
+        if inline
+            || matches!(
+                ctx.intrinsic(def_id),
+                Intrinsic::Precondition
+                    | Intrinsic::Postcondition
+                    | Intrinsic::PostconditionMut
+                    | Intrinsic::PostconditionOnce
+            )
+        {
+            let kw = match kind {
+                DeclKind::Constant => "constant",
+                DeclKind::Predicate => "predicate",
+                DeclKind::Function => "function",
+            };
+
+            meta_decl = Some(Decl::Meta(Meta {
+                name: MetaIdent("rewrite_def".into()),
+                args: Box::new([MetaArg::Keyword(kw.into()), MetaArg::Name(Name::local(sig.name))]),
+            }))
+        }
+
+        let decl = match kind {
+            DeclKind::Function => Decl::LogicDefn(LogicDefn { sig, body }),
+            DeclKind::Predicate => Decl::PredDecl(Predicate { sig, body }),
+            DeclKind::Constant => Decl::ConstantDecl(Constant {
+                name: sig.name,
+                type_: sig.retty.unwrap_or_else(|| ty::bool()),
+                body: Some(body),
+            }),
+        };
+
+        decls.push(decl);
+        decls.extend(meta_decl);
+    } else {
+        decls.push(Decl::LogicDecl(LogicDecl { kind: Some(kind), sig: sig.why_sig.clone() }));
+        decls.push(Decl::Axiom(definition_axiom(
+            &sig,
+            body,
+            "def",
+            inline,
+            triggers.into_iter().map(|trig| lower_trigger(ctx, names, &trig)).collect(),
+        )));
+    }
+
+    if !sig.contract.ensures.is_empty() {
+        decls.extend(spec_axioms(&sig));
+    }
+
+    decls
+}
+
+pub fn function_call(sig: &Signature) -> Exp {
+    let args = sig.args.iter().map(|(arg, _)| Exp::var(*arg));
+    Exp::var(sig.name).app(args)
+}
+
+pub(crate) fn spec_axioms(sig: &LogicSignature) -> impl Iterator<Item = Decl> {
+    let call = function_call(&sig.why_sig);
+    sig.contract.ensures.iter().map(move |(trig, post)| {
+        let mut condition = sig.contract.requires_implies(post.exp.clone());
+        let mut trigger: Box<[Trigger]> = if trig.is_empty() {
+            if condition.fvs().contains(&name::result()) {
+                Box::new([Trigger::single(Exp::var(name::result()))])
+            } else {
+                Box::new([])
+            }
+        } else {
+            trig.clone()
+        };
+        condition.subst(&[(name::result(), call.clone())].into_iter().collect());
+        trigger
+            .iter_mut()
+            .for_each(|t| t.subst(&[(name::result(), call.clone())].into_iter().collect()));
+        let axiom = Exp::forall_trig(sig.why_sig.args.clone(), trigger, condition);
+        let name = sig.why_sig.name.refresh_with(|s| format!("{s}_spec"));
+        Decl::Axiom(Axiom { name, rewrite: false, axiom })
+    })
+}
+
+fn definition_axiom(
+    sig: &LogicSignature,
+    body: Exp,
+    suffix: &str,
+    rewrite: bool,
+    mut triggers: Vec<Trigger>,
+) -> Axiom {
+    let call = function_call(&sig.why_sig);
+    triggers.push(Trigger::single(call.clone()));
+
+    let equation = Exp::BinaryOp(BinOp::Eq, Box::new(call), Box::new(body));
+    let condition = sig.contract.requires_implies(equation);
+    let axiom = Exp::forall_trig(sig.why_sig.args.clone(), triggers, condition);
+    let name = sig.why_sig.name.refresh_with(|s| format!("{s}_{suffix}"));
+    Axiom { name, rewrite, axiom }
+}

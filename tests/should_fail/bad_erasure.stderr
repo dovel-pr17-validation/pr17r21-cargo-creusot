@@ -1,0 +1,50 @@
+error: failed #[erasure] check for bar2
+  --> bad_erasure.rs:19:5
+   |
+14 |     baz::<42>()
+   |     ----------- target expression (baz[42])
+...
+19 |     baz::<0>()
+   |     ^^^^^^^^^^ #[erasure] expression (baz[0])
+
+error: failed #[erasure] check for bar3
+  --> bad_erasure.rs:24:5
+   |
+14 |     baz::<42>()
+   |     ----------- target expression (baz[42])
+...
+24 |     baz2::<0>()
+   |     ^^^^^^^^^^^ #[erasure] expression (baz[0])
+
+error: failed #[erasure] check for add2
+  --> bad_erasure.rs:33:9
+   |
+28 |     x + y
+   |         - erased expression (Var(HirId(4)))
+...
+33 |     x + x
+   |         ^ #[erasure] expression (Var(HirId(2)))
+
+error: #[erasure] target must have a body
+  --> bad_erasure.rs:41:1
+   |
+41 | pub fn quux2<T: Quux>() {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: failed #[erasure] check for p2
+  --> bad_erasure.rs:59:18
+   |
+53 |   pub fn p() -> P {
+   |  _________________-
+54 | |     P { a: q(), b: q() }
+55 | | }
+   | |_- target side
+...
+59 |   pub fn p2() -> P {
+   |  __________________^
+60 | |     P { b: q(), a: q() }
+61 | | }
+   | |_^ #[erasure] side (mismatched value)
+
+error: aborting due to 5 previous errors
+

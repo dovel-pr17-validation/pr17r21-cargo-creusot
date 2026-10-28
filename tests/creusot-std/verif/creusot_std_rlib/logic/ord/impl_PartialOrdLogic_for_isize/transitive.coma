@@ -1,0 +1,17 @@
+(* <isize as logic::ord::PartialOrdLogic> *)
+
+use creusot.int.Int64
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+constant x : Int64.t
+
+constant y : Int64.t
+
+constant z : Int64.t
+
+function transitive_isize (x: Int64.t) (y: Int64.t) (z: Int64.t) : ()
+
+goal vc_transitive_isize: Int64.lt x y -> Int64.lt y z -> ([@stop_split] [@expl:transitive ensures] Int64.lt x z)

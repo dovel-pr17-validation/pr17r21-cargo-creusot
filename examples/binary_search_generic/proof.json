@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_binary_search": {
+      "vc_binary_search_T": { "prover": "z3", "time": 0.027 },
+      "vc_cmp_T": { "prover": "cvc5", "time": 0.013 },
+      "vc_gt_T": { "prover": "cvc5", "time": 0.009 },
+      "vc_index_Vec_T_Global'0": { "prover": "cvc5", "time": 0.011 },
+      "vc_len_T": { "prover": "cvc5", "time": 0.009 }
+    }
+  }
+}

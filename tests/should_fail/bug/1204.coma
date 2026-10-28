@@ -1,0 +1,41 @@
+module M_evil
+  use int.Int
+  
+  predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = other <= self
+  
+  meta "rewrite_def" predicate ge_log_Int
+  
+  predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = other < self
+  
+  meta "rewrite_def" predicate gt_log_Int
+  
+  predicate well_founded_relation_Int [@inline:trivial] (self: int) (other: int) =
+    ge_log_Int self 0 /\ gt_log_Int self other
+  
+  meta "rewrite_def" predicate well_founded_relation_Int
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  constant x : int
+  
+  function evil (x: int) : int
+  
+  goal vc_evil: true
+end
+module M_wrong
+  use int.Int
+  
+  function evil (x: int) : int
+  
+  axiom evil_def: true
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  function wrong : ()
+  
+  goal vc_wrong: [@stop_split] [@expl:wrong ensures] false
+end

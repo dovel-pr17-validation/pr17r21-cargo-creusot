@@ -1,0 +1,13 @@
+(* <u32 as logic::ord::PartialOrdLogic> *)
+
+use creusot.int.UInt32
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+constant self : UInt32.t
+
+function irreflexive_u32 (self: UInt32.t) : ()
+
+goal vc_irreflexive_u32: [@stop_split] [@expl:irreflexive ensures] not UInt32.lt self self

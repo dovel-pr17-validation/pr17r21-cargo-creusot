@@ -1,0 +1,15 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_impl_VacantEntry_K__insert": {
+      "vc_clone_K": { "prover": "cvc5", "time": 0.015 },
+      "vc_insert_K": { "prover": "cvc5", "time": 0.015 },
+      "vc_insert_K'0": { "prover": "cvc5", "time": 0.01 }
+    },
+    "M_test": {
+      "vc_len_usize": { "prover": "cvc5", "time": 0.016 },
+      "vc_push_usize": { "prover": "cvc5", "time": 0.014 },
+      "vc_test": { "prover": "cvc5", "time": 0.007 }
+    }
+  }
+}

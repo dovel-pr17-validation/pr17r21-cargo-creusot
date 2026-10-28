@@ -1,0 +1,167 @@
+module M_incorrect
+  use creusot.prelude.Any
+  
+  type t_B
+  
+  predicate inv_B (_1: t_B)
+  
+  predicate resolve_B (_1: t_B)
+  
+  type t_C
+  
+  predicate inv_C (_1: t_C)
+  
+  predicate resolve_C (_1: t_C)
+  
+  predicate precondition_C (self: t_C) (args: ())
+  
+  predicate precondition_B (self: t_B) (args: bool)
+  
+  predicate postcondition_once_C (self: t_C) (args: ()) (result: bool)
+  
+  predicate postcondition_mut_C (self: t_C) (args: ()) (result_state: t_C) (result: bool)
+  
+  function fn_mut_once_C (self: t_C) (args: ()) (res: bool) : ()
+  
+  axiom fn_mut_once_C_spec:
+    forall self: t_C, args: (), res: bool [postcondition_once_C self args res]. postcondition_once_C self args res
+      = (exists res_state: t_C. postcondition_mut_C self args res_state res /\ resolve_C res_state)
+  
+  predicate hist_inv_C (self: t_C) (result_state: t_C)
+  
+  function hist_inv_trans_C (self: t_C) (b: t_C) (c: t_C) : ()
+  
+  axiom hist_inv_trans_C_spec:
+    forall self: t_C, b: t_C, c: t_C [hist_inv_C self b, hist_inv_C b c | hist_inv_C self b, hist_inv_C self c | hist_inv_C b c, hist_inv_C self c]. hist_inv_C self b
+      -> hist_inv_C b c -> hist_inv_C self c
+  
+  function hist_inv_refl_C (self: t_C) : ()
+  
+  axiom hist_inv_refl_C_spec: forall self: t_C [hist_inv_C self self]. hist_inv_C self self
+  
+  function postcondition_mut_hist_inv_C (self: t_C) (args: ()) (res_state: t_C) (res: bool) : ()
+  
+  axiom postcondition_mut_hist_inv_C_spec:
+    forall self: t_C, args: (), res_state: t_C, res: bool [postcondition_mut_C self args res_state res | hist_inv_C self res_state]. postcondition_mut_C self args res_state res
+      -> hist_inv_C self res_state
+  
+  function fn_hist_inv_C (self: t_C) (res_state: t_C) : ()
+  
+  axiom fn_hist_inv_C_spec: forall self: t_C, res_state: t_C [hist_inv_C self res_state]. hist_inv_C self res_state
+      = (self = res_state)
+  
+  predicate postcondition_C (self: t_C) (args: ()) (result: bool)
+  
+  function fn_once_C (self: t_C) (args: ()) (res: bool) : ()
+  
+  axiom fn_once_C_spec:
+    forall self: t_C, args: (), res: bool [postcondition_once_C self args res]. postcondition_once_C self args res
+      = (postcondition_C self args res /\ resolve_C self)
+  
+  function fn_mut_C (self: t_C) (args: ()) (res_state: t_C) (res: bool) : ()
+  
+  axiom fn_mut_C_spec:
+    forall self: t_C, args: (), res_state: t_C, res: bool [postcondition_mut_C self args res_state res]. postcondition_mut_C self args res_state res
+      = (postcondition_C self args res /\ self = res_state)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let incorrect_C (cond: t_C) (branch: t_B) (return (x: ())) =
+  {[@stop_split] [@expl:incorrect_C requires] ([@stop_split] [@expl:incorrect 'cond' type invariant] inv_C cond)
+    /\ ([@stop_split] [@expl:incorrect 'branch' type invariant] inv_B branch)
+    /\ ([@stop_split] [@expl:incorrect requires] precondition_C cond ()
+    /\ (forall b: bool. precondition_B branch b
+      /\ (exists b'0: bool. forall b0: bool. postcondition_C cond () b0 -> b0 = b'0)))}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = s1 [ _ck -> (! {[@expl:type invariant] inv_B branch} any) ]
+      | s1 = -{resolve_B branch}- s2
+      | s2 = s3 [ _ck -> (! {[@expl:type invariant] inv_C cond} any) ]
+      | s3 = -{resolve_C cond}- s4
+      | s4 = return {_ret} ] ] [ & _ret: () = Any.any_l () | & cond: t_C = cond | & branch: t_B = branch ])
+    [ return (result: ()) -> {[@stop_split] [@expl:incorrect ensures] false} (! return {result}) ]
+end
+module M_valid_normal
+  use creusot.int.UInt32
+  use creusot.prelude.Any
+  use creusot.prelude.MutBorrow
+  
+  type closure1 = { c0: UInt32.t }
+  
+  predicate gt_log_u32 [@inline:trivial] (self: UInt32.t) (other: UInt32.t) = UInt32.lt other self
+  
+  meta "rewrite_def" predicate gt_log_u32
+  
+  let closure1 (self: closure1) (return (x: bool)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &res <- UInt32.gt self.c0 (7: UInt32.t) ] s1 | s1 = [ &_ret <- res ] s2 | s2 = return {_ret} ] ]
+    [ & _ret: bool = Any.any_l () | & self: closure1 = self | & res: bool = Any.any_l () ])
+    [ return (result: bool) -> {[@stop_split] [@expl:closure ensures] result = gt_log_u32 self.c0 (7: UInt32.t)}
+      (! return {result}) ]
+  
+  type closure2 = { c0'0: MutBorrow.t UInt32.t }
+  
+  predicate resolve_refmut_closure2 [@inline:trivial] (_1: MutBorrow.t closure2) = _1.final = _1.current
+  
+  meta "rewrite_def" predicate resolve_refmut_closure2
+  
+  predicate hist_inv_closure2 (self: closure2) (result_state: closure2) = result_state.c0'0.final = self.c0'0.final
+  
+  let closure2 (self: MutBorrow.t closure2) (b: bool) (return (x: ())) = (! bb0
+    [ bb0 = any [ br0 -> {b = false} (! bb2) | br1 -> {b} (! bb1) ]
+    | bb1 = s0 [ s0 = [ &_4 <- (2: UInt32.t) ] s1 | s1 = bb3 ]
+    | bb2 = s0 [ s0 = [ &_4 <- (1: UInt32.t) ] s1 | s1 = bb3 ]
+    | bb3 = s0
+      [ s0 = [ &self <- { self with current = { c0'0 = { self.current.c0'0 with current = _4 } } } ] s1
+      | s1 = -{resolve_refmut_closure2 self}- s2
+      | s2 = return {_ret} ] ]
+    [ & _ret: () = Any.any_l () | & self: MutBorrow.t closure2 = self | & b: bool = b | & _4: UInt32.t = Any.any_l () ])
+    [ return (result: ()) -> {[@stop_split] [@expl:closure2 ensures] ([@stop_split] [@expl:closure ensures] b
+          /\ self.final.c0'0.current = (2: UInt32.t)
+        \/ not b /\ self.final.c0'0.current = (1: UInt32.t))
+      /\ ([@stop_split] [@expl:closure hist_inv post] hist_inv_closure2 self.current self.final)}
+      (! return {result}) ]
+  
+  predicate precondition_closure1 (self: closure1) (args: ()) = true
+  
+  meta "rewrite_def" predicate precondition_closure1
+  
+  predicate precondition_closure2 (self: closure2) (args: bool) = let b = args in true
+  
+  meta "rewrite_def" predicate precondition_closure2
+  
+  predicate postcondition_closure1 (self: closure1) (args: ()) (result: bool) =
+    result = gt_log_u32 self.c0 (7: UInt32.t)
+  
+  meta "rewrite_def" predicate postcondition_closure1
+  
+  let incorrect_closure1 (cond: closure1) (branch: closure2) (return (x: ())) =
+  {[@stop_split] [@expl:incorrect requires] precondition_closure1 cond ()
+    /\ (forall b: bool. precondition_closure2 branch b
+      /\ (exists b'0: bool. forall b0: bool. postcondition_closure1 cond () b0 -> b0 = b'0))}
+    any [ return (result: ()) -> {[@stop_split] [@expl:incorrect ensures] false} (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let valid_normal (n: UInt32.t) (return (x: UInt32.t)) = (! bb0
+    [ bb0 = s0
+      [ s0 = [ &r <- (0: UInt32.t) ] s1
+      | s1 = [ &cond <- { c0 = n } ] s2
+      | s2 = MutBorrow.borrow_mut <UInt32.t> {r}
+          (fun (_bor: MutBorrow.t UInt32.t) -> [ &_7 <- _bor ] [ &r <- _bor.final ] s3)
+      | s3 = [ &branch <- { c0'0 = _7 } ] s4
+      | s4 = incorrect_closure1 {cond} {branch} (fun (_x: ()) -> [ &_8 <- _x ] s5)
+      | s5 = [ &_ret <- r ] s6
+      | s6 = return {_ret} ] ]
+    [ & _ret: UInt32.t = Any.any_l ()
+    | & n: UInt32.t = n
+    | & r: UInt32.t = Any.any_l ()
+    | & cond: closure1 = Any.any_l ()
+    | & branch: closure2 = Any.any_l ()
+    | & _7: MutBorrow.t UInt32.t = Any.any_l ()
+    | & _8: () = Any.any_l () ])
+    [ return (result: UInt32.t) -> {[@stop_split] [@expl:valid_normal ensures] false} (! return {result}) ]
+end

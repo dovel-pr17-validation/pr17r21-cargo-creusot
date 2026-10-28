@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_test": {
+      "vc_ix_T": { "prover": "cvc5", "time": 0.009 },
+      "vc_test_T": { "prover": "cvc5", "time": 0.012 }
+    }
+  }
+}

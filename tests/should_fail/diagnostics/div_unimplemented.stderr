@@ -1,0 +1,3 @@
+div_unimplemented.rs:9:5: error[E0277]: Cannot divide `i32` by `_` in logic: no implementation for `i32 / _` in logic
+div_unimplemented.rs:9:5: error[E0277]: Cannot divide `i32` by `i32` in logic: no implementation for `i32 / i32` in logic
+error: aborting due to 2 previous errors

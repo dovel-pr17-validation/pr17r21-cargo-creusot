@@ -1,0 +1,19 @@
+(* logic::seq::Seq<T> *)
+
+use seq.Seq
+use seq.Reverse
+
+type t_T
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+constant self : Seq.seq t_T
+
+constant other : Seq.seq t_T
+
+function reverse_concat_T (self: Seq.seq t_T) (other: Seq.seq t_T) : ()
+
+goal vc_reverse_concat_T: [@stop_split] [@expl:reverse_concat ensures] Reverse.reverse (Seq.(++) self other)
+  = Seq.(++) (Reverse.reverse other) (Reverse.reverse self)

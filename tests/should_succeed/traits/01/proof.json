@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_uses_generic": {
+      "vc_from_b_T": { "prover": "cvc5", "time": 0.006 },
+      "vc_uses_generic_T": { "prover": "cvc5", "time": 0.015 }
+    }
+  }
+}

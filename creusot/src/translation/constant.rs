@@ -1,0 +1,289 @@
+use crate::{
+    ctx::{HasTyCtxt as _, TranslationCtx},
+    translation::{fmir::Operand, pearlite::Literal},
+};
+use rustc_abi::Size;
+use rustc_hir::{def::DefKind, def_id::DefId};
+use rustc_middle::{
+    mir::{self, ConstOperand, ConstValue, TerminatorKind, interpret::AllocRange},
+    ty::{self, AliasConstKind, ConstKind, Ty, TyCtxt, TypingEnv},
+};
+use rustc_span::Span;
+
+use super::pearlite::{Term, TermKind};
+
+fn is_eval(ctx: &TranslationCtx, def_id: DefId) -> bool {
+    crate::contracts_items::is_eval_constant(ctx.tcx, def_id)
+        || ctx.extern_spec(def_id).is_some_and(|spec| spec.eval_constant)
+}
+
+/// Translate constant MIR operands
+pub(crate) fn mirconst_to_operand<'tcx>(
+    c: &ConstOperand<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    caller_id: DefId,
+) -> Operand<'tcx> {
+    use mir::Const::*;
+    match ctx.erase_and_anonymize_regions(c.const_) {
+        Ty(ty, tyconst) => Operand::term(Term::const_(tyconst, ty, c.span)),
+        Unevaluated(u, ty) => {
+            if let Some(promoted) = u.promoted {
+                Operand::promoted(caller_id, promoted, ty)
+            } else if matches!(ctx.def_kind(u.def), DefKind::AnonConst) {
+                Operand::inline_const(u.def, u.args, ty)
+            } else {
+                Operand::term(Term::const_item(u.def, u.args, ty).span(c.span))
+            }
+        }
+        Val(const_value, ty) => Operand::term(value_to_term(const_value, ty, ctx, c.span)),
+    }
+}
+
+fn value_to_term<'tcx>(
+    value: ConstValue,
+    ty: Ty<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    span: Span,
+) -> Term<'tcx> {
+    use ConstValue::*;
+    use mir::interpret::Scalar;
+    let kind = match value {
+        Scalar(Scalar::Int(scalar)) => TermKind::Lit(scalar_to_literal(scalar, ty, ctx, span)),
+        Scalar(Scalar::Ptr(ptr, _)) if let Some(size) = get_u8_slice_len(ctx.tcx, ty) => {
+            let (prov, start) = ptr.prov_and_relative_offset();
+            let alloc_id = prov.alloc_id();
+            let bytes = get_bytes(ctx.tcx, alloc_id, start, size);
+            TermKind::Lit(Literal::Bytes(bytes.into()))
+        }
+        ZeroSized => TermKind::Lit(Literal::ZST),
+        Slice { alloc_id, meta } if ty.peel_refs().is_str() => {
+            let start = Size::from_bytes(0);
+            let size = Size::from_bytes(meta);
+            let bytes = get_bytes(ctx.tcx, alloc_id, start, size);
+            let string = std::str::from_utf8(bytes).unwrap();
+            TermKind::Lit(Literal::String(string.into()))
+        }
+        _ => ctx
+            .crash_and_error(span, format!("Unsupported constant value: {value:?} of type {ty:?}")),
+    };
+    Term { kind, ty, span }
+}
+
+fn get_bytes<'tcx>(
+    tcx: ty::TyCtxt<'tcx>,
+    alloc_id: mir::interpret::AllocId,
+    start: Size,
+    size: Size,
+) -> &'tcx [u8] {
+    let data = tcx.global_alloc(alloc_id).unwrap_memory();
+    data.inner().get_bytes_strip_provenance(&tcx, AllocRange { start, size }).unwrap()
+}
+
+/// Given `ty = &[u8; n]`, return `n`.
+fn get_u8_slice_len<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: Ty<'tcx>) -> Option<Size> {
+    let ty::TyKind::Ref(_, ty, _) = ty.kind() else {
+        return None;
+    };
+    let ty::TyKind::Array(ety, n) = ty.kind() else {
+        return None;
+    };
+    if !matches!(ety.kind(), ty::TyKind::Uint(ty::UintTy::U8)) {
+        return None;
+    }
+    n.try_to_target_usize(tcx).map(|n| Size::from_bytes(n))
+}
+
+fn scalar_to_literal<'tcx>(
+    scalar: ty::ScalarInt,
+    ty: Ty<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    span: Span,
+) -> Literal {
+    try_scalar_to_literal(scalar, ty, ctx, span).unwrap_or_else(|| {
+        ctx.crash_and_error(span, format!("Could not convert scalar to literal for type: {:?}", ty))
+    })
+}
+
+fn try_scalar_to_literal<'tcx>(
+    scalar: ty::ScalarInt,
+    ty: Ty<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    span: Span,
+) -> Option<Literal> {
+    use rustc_middle::ty::FloatTy;
+    use rustc_type_ir::TyKind::*;
+    let target_width = ctx.tcx.sess.target.pointer_width;
+    Some(match ty.kind() {
+        Char => Literal::Char(char::try_from(scalar).ok()?),
+        Int(ity) => {
+            let size = Size::from_bits(ity.normalize(target_width).bit_width().unwrap());
+            let bits = size.sign_extend(scalar.try_to_bits(size).ok()?);
+            Literal::MachSigned(bits, *ity)
+        }
+        Uint(uty) => {
+            let size = Size::from_bits(uty.normalize(target_width).bit_width().unwrap());
+            let bits = scalar.try_to_bits(size).ok()?;
+            Literal::MachUnsigned(bits, *uty)
+        }
+        Bool => Literal::Bool(scalar.try_to_bool().unwrap_or_else(|_| {
+            ctx.crash_and_error(span, format!("can't convert {scalar:?} to bool"))
+        })),
+        Float(FloatTy::F32) => {
+            let float = f32::from_bits(scalar.try_to_bits(Size::from_bits(32)).ok()? as u32);
+            if float.is_nan() {
+                ctx.crash_and_error(span, "NaN is not yet supported")
+            } else {
+                Literal::Float((float as f64).into(), FloatTy::F32)
+            }
+        }
+        Float(FloatTy::F64) => {
+            let float = f64::from_bits(scalar.try_to_bits(Size::from_bits(64)).ok()? as u64);
+            if float.is_nan() {
+                ctx.crash_and_error(span, "NaN is not yet supported")
+            } else {
+                Literal::Float(float.into(), FloatTy::F64)
+            }
+        }
+        FnDef(..) => Literal::ZST,
+        kind => ctx.crash_and_error(span, format!("unsupported constant expression {kind:?}")),
+    })
+}
+
+/// Translate constant with a simple body: it can be reduced to a value expressible in
+/// the logical fragment of Why3, or its body is just a variable.
+/// `None` if it does not match these cases.
+///
+/// const definitions can be annotated with `#[constant(eval)]` to
+/// force evaluation, hiding silly definitions that are best hidden from users:
+///
+/// ```ignore
+/// const MAX: usize = !0;
+///
+/// const MIN: isize = !isize::MAX;
+/// const MAX: isize = (usize::MAX >> 1) as isize;
+/// ```
+pub fn try_const_to_term<'tcx>(
+    def_id: DefId,
+    subst: ty::GenericArgsRef<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    typing_env: TypingEnv<'tcx>,
+    source_id: DefId,
+) -> Option<Term<'tcx>> {
+    let kind = ctx.def_kind(def_id);
+    if matches!(kind, DefKind::ConstParam) {
+        return None;
+    }
+    if is_eval(ctx, def_id) {
+        let ty = ctx.type_of(def_id).instantiate(ctx.tcx, subst);
+        let ty = ctx.tcx.normalize_erasing_regions(typing_env, ty);
+        let span = ctx.def_span(def_id);
+        let kind = ty::AliasConstKind::new_from_def_id(ctx.tcx, def_id);
+        let uneval = ty::AliasConst::new(ctx.tcx, kind, subst);
+        if let Ok(Ok(val)) = ctx.const_eval_resolve_for_typeck(typing_env, uneval, span) {
+            return valtree_to_term(val, ctx, ty, typing_env, span);
+        }
+    }
+    if matches!(kind, DefKind::AssocConst { .. }) {
+        return None;
+    }
+    // Calling `trivial_const` here (and it returning None) makes `mir_for_ctfe` available in
+    // `instance_mir` and prevents it from panicking, idk why.
+    // I just found this from reverse engineering `const_eval_resolve_for_typeck`
+    if let Some((val, ty)) = ctx.trivial_const(def_id) {
+        return Some(value_to_term(val, ty, ctx, ctx.def_span(source_id)));
+    }
+    // Handle const definitions of the form `const N = M;` where `M` is another constant.
+    // We can generate a simple definition `constant N = M` instead of a Coma setter.
+    let ty::Instance { def, args } =
+        ty::Instance::try_resolve(ctx.tcx, typing_env, def_id, subst).ok()??;
+    let body = ctx.instance_mir(def);
+    let (c, ty, span) = simple_body_const(ctx.tcx, body)?;
+    match c {
+        ConstKind::Param(p) => {
+            let c = args.const_at(p.index as usize);
+            Some(Term::const_(c, ty, span))
+        }
+        ConstKind::Alias(_, u)
+            if let AliasConstKind::Projection { def_id }
+            | AliasConstKind::Free { def_id }
+            | AliasConstKind::Inherent { def_id } = u.kind =>
+        {
+            let (u, ty) = ctx.tcx.normalize_erasing_regions(
+                typing_env,
+                ty::EarlyBinder::bind(ctx.tcx, (u, ty)).instantiate(ctx.tcx, args),
+            );
+            Some(Term::const_item(def_id, u.args, ty).span(span))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn valtree_to_term<'tcx>(
+    valtree: ty::ValTree<'tcx>,
+    ctx: &TranslationCtx<'tcx>,
+    ty: Ty<'tcx>,
+    env: TypingEnv<'tcx>,
+    span: Span,
+) -> Option<Term<'tcx>> {
+    let kind = match (*valtree, ty.kind()) {
+        (ty::ValTreeKind::Leaf(_), ty::Ref(..)) => return None,
+        (ty::ValTreeKind::Leaf(scalar), _) => {
+            TermKind::Lit(scalar_to_literal(*scalar, ty, ctx, span))
+        }
+        (ty::ValTreeKind::Branch(fields), ty::Tuple(..)) => {
+            let fields = fields
+                .into_iter()
+                .map(|field| {
+                    let ty::ConstKind::Value(ty::Value { ty, valtree }) = field.kind() else {
+                        unreachable!()
+                    };
+                    valtree_to_term(valtree, ctx, ty, env, span)
+                })
+                .collect::<Option<Box<[_]>>>()?;
+            TermKind::Tuple { fields }
+        }
+        (ty::ValTreeKind::Branch(_), ty::Adt(..)) => {
+            let ty::DestructuredAdtConst { variant, fields } =
+                ty::Value { ty, valtree }.destructure_adt_const();
+            let fields = fields
+                .into_iter()
+                .map(|field| {
+                    let ty::ConstKind::Value(ty::Value { ty, valtree }) = field.kind() else {
+                        unreachable!()
+                    };
+                    valtree_to_term(valtree, ctx, ty, env, span)
+                })
+                .collect::<Option<Box<[_]>>>()?;
+            TermKind::Constructor { variant, fields }
+        }
+        _ => return None,
+    };
+    Some(Term { kind, ty, span })
+}
+
+/// Extract constant from MIR body. It should be a single assignment `_0 = const M`.
+/// Otherwise return `None`.
+fn simple_body_const<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mir::Body<'tcx>,
+) -> Option<(ConstKind<'tcx>, Ty<'tcx>, Span)> {
+    if body.basic_blocks.len() != 1 {
+        return None;
+    }
+    let block = &body.basic_blocks[mir::BasicBlock::from_usize(0)];
+    if block.statements.len() != 1 || !matches!(block.terminator().kind, TerminatorKind::Return) {
+        return None;
+    }
+    let mir::StatementKind::Assign(box (lhs, rhs)) = &block.statements[0].kind else { return None };
+    if lhs.local != mir::Local::from_u32(0) || lhs.projection.len() != 0 {
+        return None;
+    }
+    let mir::Rvalue::Use(mir::Operand::Constant(rhs), _) = rhs else { return None };
+    match rhs.const_ {
+        mir::Const::Ty(ty, c) => Some((c.kind(), ty, rhs.span)),
+        mir::Const::Unevaluated(u, ty) => {
+            Some((rustc_type_ir::ConstKind::Alias(ty::IsRigid::No, u.shrink(tcx)), ty, rhs.span))
+        }
+        _ => return None,
+    }
+}

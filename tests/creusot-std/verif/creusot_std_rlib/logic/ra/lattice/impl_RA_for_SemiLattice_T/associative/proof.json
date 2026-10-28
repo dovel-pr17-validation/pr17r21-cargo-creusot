@@ -1,0 +1,8 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_associative_SemiLattice_T": { "prover": "cvc4", "time": 0.07 }
+    }
+  }
+}

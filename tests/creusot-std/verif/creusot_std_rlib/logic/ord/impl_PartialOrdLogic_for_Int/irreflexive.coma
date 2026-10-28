@@ -1,0 +1,13 @@
+(* <logic::int::Int as logic::ord::PartialOrdLogic> *)
+
+use int.Int
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+constant self : int
+
+function irreflexive_Int (self: int) : ()
+
+goal vc_irreflexive_Int: [@stop_split] [@expl:irreflexive ensures] not self < self

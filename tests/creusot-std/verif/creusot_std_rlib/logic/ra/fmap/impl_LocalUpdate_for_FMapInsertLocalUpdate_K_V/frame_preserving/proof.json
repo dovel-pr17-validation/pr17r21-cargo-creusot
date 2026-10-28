@@ -1,0 +1,11 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_frame_preserving_FMapInsertLocalUpdate_K_V": {
+        "prover": "cvc4",
+        "time": 0.326
+      }
+    }
+  }
+}

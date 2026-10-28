@@ -1,0 +1,11 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_resolve_coherence_Iter_K_V": {
+        "prover": "alt-ergo",
+        "time": 0.036
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_test_arc": { "vc_test_arc": { "prover": "cvc5", "time": 0.01 } },
+    "M_test_rc": { "vc_test_rc": { "prover": "cvc5", "time": 0.008 } }
+  }
+}

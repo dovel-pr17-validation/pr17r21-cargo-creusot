@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_inc_max_many": {
+      "vc_inc_max_many": { "prover": "cvc5", "time": 0.015 },
+      "vc_take_max": { "prover": "cvc5", "time": 0.015 }
+    },
+    "M_take_max": { "vc_take_max": { "prover": "cvc5", "time": 0.011 } }
+  }
+}
