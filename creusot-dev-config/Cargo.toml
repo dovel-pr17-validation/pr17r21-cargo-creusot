@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 creusot-setup = { path = "../creusot-setup" }
-anyhow = "1.0"
+anyhow = "1.0.104"
 which = "8.0"
